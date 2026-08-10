@@ -1,4 +1,4 @@
-"""Recording an old value is not enough. Minty must put it back."""
+"""Recording an old value is not enough. Peppermint must put it back."""
 
 from __future__ import annotations
 
@@ -6,8 +6,8 @@ import subprocess
 
 import pytest
 
-from minty.daemon import undo
-from minty.daemon.db import Database
+from peppermint.daemon import undo
+from peppermint.daemon.db import Database
 
 
 @pytest.fixture
@@ -48,7 +48,7 @@ def test_a_move_back_makes_the_old_folder_again(home_tmp):
 
 
 def test_a_move_back_refuses_to_replace_a_new_file(home_tmp):
-    """Something new sits where the file used to be. Minty must not overwrite it."""
+    """Something new sits where the file used to be. Peppermint must not overwrite it."""
     original = home_tmp / "notes.txt"
     moved = home_tmp / "Documents" / "notes.txt"
     moved.parent.mkdir()
@@ -84,7 +84,7 @@ def test_restoring_a_file_leaves_no_temporary_behind(home_tmp):
     target = home_tmp / "config.txt"
     target.write_text("new")
     undo.revert({"kind": "file", "target": str(target), "old_value": "old"})
-    leftovers = [p.name for p in home_tmp.iterdir() if "minty-undo" in p.name]
+    leftovers = [p.name for p in home_tmp.iterdir() if "peppermint-undo" in p.name]
     assert leftovers == []
 
 

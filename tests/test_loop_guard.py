@@ -1,4 +1,4 @@
-"""Minty must not repeat a call that does not work.
+"""Peppermint must not repeat a call that does not work.
 
 This comes from a real task. The model asked to run the same install command
 29 times. Every one failed the same way, and every one asked the user for
@@ -9,10 +9,10 @@ from __future__ import annotations
 
 import pytest
 
-from minty import config
-from minty.common.models import Status
-from minty.daemon.agent import Agent, attempt_key
-from minty.daemon.db import Database
+from peppermint import config
+from peppermint.common.models import Status
+from peppermint.daemon.agent import Agent, attempt_key
+from peppermint.daemon.db import Database
 from tests.test_agent import FakeCall, FakeLLM, FakeMessage
 
 
@@ -97,7 +97,7 @@ def test_a_repeated_risky_call_never_asks_twice(db, home_tmp):
 
     asked = [s for s in db.get_steps(task_id) if s.risk == "risky"]
     assert len(asked) <= config.MAX_SAME_CALL, \
-        f"Minty asked {len(asked)} times for the same action"
+        f"Peppermint asked {len(asked)} times for the same action"
     assert victim.exists()
 
 

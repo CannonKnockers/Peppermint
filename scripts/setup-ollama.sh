@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
-# Install Ollama in the home directory and pull the model Minty uses.
+# Install Ollama in the home directory and pull the model Peppermint uses.
 # This script needs no root.
 set -euo pipefail
 
 PREFIX="$HOME/.local/ollama"
 DIST="$HOME/.local/share/ollama-dist"
-MODEL="${MINTY_MODEL:-qwen3:8b}"
+MODEL="${PEPPERMINT_MODEL:-qwen3:8b}"
 UNIT="$HOME/.config/systemd/user/ollama.service"
 
 say() { printf '\n\033[1m%s\033[0m\n' "$*"; }
 
 say "1. Find the newest release"
 TAG=$(curl -sSL https://api.github.com/repos/ollama/ollama/releases/latest | grep -m1 '"tag_name"' | cut -d'"' -f4)
-[ -n "$TAG" ] || { echo "Minty could not read the release list."; exit 1; }
+[ -n "$TAG" ] || { echo "Peppermint could not read the release list."; exit 1; }
 URL="https://github.com/ollama/ollama/releases/download/$TAG/ollama-linux-amd64.tar.zst"
 echo "Release $TAG"
 
@@ -27,7 +27,7 @@ say "3. Make the user service"
 mkdir -p "$(dirname "$UNIT")"
 cat > "$UNIT" <<EOF
 [Unit]
-Description=Ollama server (user install for Minty)
+Description=Ollama server (user install for Peppermint)
 After=network-online.target
 
 [Service]

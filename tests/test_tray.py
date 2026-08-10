@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from minty.ui.tray import (
+from peppermint.ui.tray import (
     ICON_ATTENTION,
     ICON_FAILED,
     ICON_IDLE,

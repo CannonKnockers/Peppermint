@@ -2,8 +2,8 @@
 
 import pytest
 
-from minty.common.models import Status
-from minty.daemon.db import Database
+from peppermint.common.models import Status
+from peppermint.daemon.db import Database
 
 
 @pytest.fixture
@@ -57,7 +57,7 @@ def test_recover_never_repeats_a_change_it_cannot_check(db):
     task_id = db.add_task("delete a file")
     db.set_status(task_id, Status.RUNNING)
     db.add_step(task_id, "delete_file", {"path": "/home/jesse/x"}, "risky",
-                "Minty is doing this now.", "executing", mutating=True)
+                "Peppermint is doing this now.", "executing", mutating=True)
 
     result = db.recover()
 
@@ -86,7 +86,7 @@ def test_a_finished_change_does_not_block_recovery(db):
 # --- migrations -----------------------------------------------------------
 
 def test_a_fresh_database_is_at_the_current_version(db):
-    from minty.daemon.db import SCHEMA_VERSION
+    from peppermint.daemon.db import SCHEMA_VERSION
 
     assert db.current_version() == SCHEMA_VERSION
 
@@ -100,7 +100,7 @@ def test_an_old_database_gains_the_new_columns(tmp_path):
     """A database made by version 1 must keep its data and gain the columns."""
     import sqlite3
 
-    from minty.daemon.db import Database
+    from peppermint.daemon.db import Database
 
     path = tmp_path / "old.db"
     old = sqlite3.connect(path)
@@ -129,7 +129,7 @@ def test_an_old_database_gains_the_new_columns(tmp_path):
 
     upgraded = Database(path)
 
-    from minty.daemon.db import SCHEMA_VERSION
+    from peppermint.daemon.db import SCHEMA_VERSION
 
     assert upgraded.current_version() == SCHEMA_VERSION
     assert upgraded.get_task(1).idea == "an old task", "the old data must survive"

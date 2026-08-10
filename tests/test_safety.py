@@ -18,7 +18,7 @@ from pathlib import Path
 
 import pytest
 
-from minty.daemon import safety
+from peppermint.daemon import safety
 from tests.corpus_safety import OBFUSCATED, RISKY, SAFE
 
 HOME = Path.home()
@@ -29,19 +29,19 @@ HOME = Path.home()
 @pytest.mark.parametrize("command,why", SAFE, ids=[c for c, _ in SAFE])
 def test_read_only_commands_run_at_once(command, why):
     verdict = safety.classify_command(command)
-    assert verdict.safe, f"{command!r} only reads ({why}), but Minty blocked it: {verdict.reason}"
+    assert verdict.safe, f"{command!r} only reads ({why}), but Peppermint blocked it: {verdict.reason}"
 
 
 @pytest.mark.parametrize("command,why", RISKY, ids=[c for c, _ in RISKY])
 def test_dangerous_commands_wait_for_the_user(command, why):
     verdict = safety.classify_command(command)
-    assert not verdict.safe, f"{command!r} {why}, but Minty called it safe"
+    assert not verdict.safe, f"{command!r} {why}, but Peppermint called it safe"
 
 
 @pytest.mark.parametrize("command,why", OBFUSCATED, ids=[c for c, _ in OBFUSCATED])
 def test_a_different_spelling_does_not_hide_the_danger(command, why):
     verdict = safety.classify_command(command)
-    assert not verdict.safe, f"{command!r} {why}, but Minty called it safe"
+    assert not verdict.safe, f"{command!r} {why}, but Peppermint called it safe"
 
 
 # --- properties -----------------------------------------------------------
@@ -145,7 +145,7 @@ def test_find_is_only_safe_without_its_running_flags(flag):
 
 
 def test_an_unknown_command_is_never_safe():
-    """Default deny. Minty does not guess."""
+    """Default deny. Peppermint does not guess."""
     for command in ("frobnicate", "./x.sh", "/opt/thing", "definitely-not-real --x"):
         assert not safety.classify_command(command).safe
 

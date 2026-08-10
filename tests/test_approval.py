@@ -6,11 +6,11 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from minty import config
-from minty.common.models import Status
-from minty.daemon import approval
-from minty.daemon.agent import Agent
-from minty.daemon.db import Database
+from peppermint import config
+from peppermint.common.models import Status
+from peppermint.daemon import approval
+from peppermint.daemon.agent import Agent
+from peppermint.daemon.db import Database
 from tests.test_agent import FakeCall, FakeLLM, FakeMessage
 
 
@@ -51,7 +51,7 @@ def test_a_different_task_makes_a_different_token():
 
 
 def test_a_new_policy_version_invalidates_old_tokens(monkeypatch):
-    from minty.daemon import safety
+    from peppermint.daemon import safety
 
     before = approval.make_token(1, "delete_file", {"path": "x"})
     monkeypatch.setattr(safety, "POLICY_VERSION", safety.POLICY_VERSION + 1)

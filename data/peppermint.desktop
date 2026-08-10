@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Peppermint
+GenericName=AI desktop helper
+Comment=Toss an idea to Peppermint and it does the work in the background
+Exec=@PROJECT_ROOT@/.venv/bin/peppermint toggle
+Icon=system-run
+Terminal=false
+Categories=Utility;System;
+Keywords=ai;assistant;helper;automation;
+StartupNotify=false

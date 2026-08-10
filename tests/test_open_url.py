@@ -9,9 +9,9 @@ from __future__ import annotations
 
 import pytest
 
-from minty.daemon import tools
-from minty.daemon.tools import web
-from minty.daemon.tools.registry import Confirm, Context, ToolError
+from peppermint.daemon import tools
+from peppermint.daemon.tools import web
+from peppermint.daemon.tools.registry import Confirm, Context, ToolError
 
 
 @pytest.fixture
@@ -245,14 +245,14 @@ def test_open_url_is_registered():
 
 
 def test_the_model_is_told_to_prefer_open_url():
-    from minty.daemon.agent import system_prompt
+    from peppermint.daemon.agent import system_prompt
 
     assert "open_url" in system_prompt()
 
 
 def test_run_shell_still_refuses_to_open_a_browser(ctx):
     """open_url must not become a reason to loosen run_shell."""
-    from minty.daemon import safety
+    from peppermint.daemon import safety
 
     for command in ("xdg-open https://example.com", "firefox https://example.com"):
         assert not safety.classify_command(command).safe

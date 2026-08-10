@@ -17,7 +17,7 @@ def home_tmp():
     hidden folder as risky too. A test of normal file work must therefore run
     in a plain, visible folder inside the home directory.
     """
-    path = Path.home() / f"minty-test-{uuid.uuid4().hex[:8]}"
+    path = Path.home() / f"peppermint-test-{uuid.uuid4().hex[:8]}"
     path.mkdir()
     try:
         yield path

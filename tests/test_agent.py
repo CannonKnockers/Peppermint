@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import pytest
 
-from minty.common.models import Status
-from minty.daemon import tools
-from minty.daemon.agent import Agent
-from minty.daemon.db import Database
+from peppermint.common.models import Status
+from peppermint.daemon import tools
+from peppermint.daemon.agent import Agent
+from peppermint.daemon.db import Database
 
 
 class FakeCall:
@@ -191,7 +191,7 @@ def test_missing_argument_is_repaired(db):
 
 
 def test_too_many_bad_calls_fail_the_task(db, monkeypatch):
-    from minty import config
+    from peppermint import config
 
     monkeypatch.setattr(config, "MAX_REPAIRS", 2)
     # Each call is different, so the repair limit is what stops this, not the
@@ -207,7 +207,7 @@ def test_too_many_bad_calls_fail_the_task(db, monkeypatch):
 
 
 def test_iteration_limit_fails_cleanly(db, monkeypatch):
-    from minty import config
+    from peppermint import config
 
     monkeypatch.setattr(config, "MAX_ITERATIONS", 3)
     llm = FakeLLM([FakeMessage(tool_calls=[FakeCall("system_info", {"topic": "os"})]) for _ in range(10)])
@@ -232,7 +232,7 @@ def test_empty_reply_gets_one_nudge_then_fails(db):
 
 
 def test_a_promise_is_not_an_answer(db):
-    """The model often says what it will do. Minty must push it on."""
+    """The model often says what it will do. Peppermint must push it on."""
     llm = FakeLLM([
         FakeMessage(content="Now, I'll create the folders and move the files."),
         FakeMessage(tool_calls=[FakeCall("list_dir", {"path": "/tmp"})]),
@@ -257,7 +257,7 @@ def test_a_promise_is_not_an_answer(db):
     "I am going to install the package.",
 ])
 def test_promise_texts_are_detected(text):
-    from minty.daemon.agent import promises_more
+    from peppermint.daemon.agent import promises_more
 
     assert promises_more(text)
 
@@ -270,14 +270,14 @@ def test_promise_texts_are_detected(text):
     "I created a shortcut for the terminal.",
 ])
 def test_real_answers_are_not_treated_as_promises(text):
-    from minty.daemon.agent import promises_more
+    from peppermint.daemon.agent import promises_more
 
     assert not promises_more(text)
 
 
 def test_the_nudge_gives_up_and_accepts_the_text(db, monkeypatch):
     """A model that only ever promises must not loop for ever."""
-    from minty import config
+    from peppermint import config
 
     monkeypatch.setattr(config, "MAX_CONTINUE_NUDGES", 2)
     llm = FakeLLM([FakeMessage(content="I'll do it now.") for _ in range(8)])
@@ -304,7 +304,7 @@ def test_history_survives_and_grows(db):
 
 
 def test_system_prompt_has_the_real_home_path():
-    from minty.daemon.agent import HOME, system_prompt
+    from peppermint.daemon.agent import HOME, system_prompt
 
     prompt = system_prompt()
     assert HOME in prompt

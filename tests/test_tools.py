@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from minty.daemon import tools
-from minty.daemon.tools.registry import Ask, Confirm, Context, ToolError
+from peppermint.daemon import tools
+from peppermint.daemon.tools.registry import Ask, Confirm, Context, ToolError
 
 
 @pytest.fixture

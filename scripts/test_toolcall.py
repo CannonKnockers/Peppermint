@@ -48,7 +48,7 @@ CASES = [
 ]
 
 SYSTEM = (
-    "You are Minty, a helper on Linux Mint with Cinnamon. "
+    "You are Peppermint, a helper on Linux Mint with Cinnamon. "
     "Use a tool to find facts. Do not guess."
 )
 
