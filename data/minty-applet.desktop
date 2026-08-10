@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Minty panel icon
+Comment=Puts the Minty icon on the panel, next to the network and volume buttons
+Exec=@PROJECT_ROOT@/.venv/bin/minty-window --background
+Icon=system-run
+Terminal=false
+Categories=Utility;
+X-GNOME-Autostart-enabled=true
+# The panel needs a moment after login before it accepts a new icon.
+X-GNOME-Autostart-Delay=8
+NoDisplay=true

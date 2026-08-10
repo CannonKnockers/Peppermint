@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "minty"
+version = "0.1.0"
+description = "A local AI helper for the Linux Mint desktop"
+requires-python = ">=3.10"
+dependencies = ["ollama>=0.4"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[project.scripts]
+minty = "minty.cli:main"
+minty-daemon = "minty.daemon.main:main"
+minty-window = "minty.ui.app:main"
+
+[tool.setuptools.packages.find]
+include = ["minty*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+filterwarnings = ["ignore::DeprecationWarning"]

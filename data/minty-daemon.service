@@ -1,0 +1,17 @@
+[Unit]
+Description=Minty daemon: the local AI helper for the Linux Mint desktop
+After=graphical-session.target ollama.service
+Wants=ollama.service
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=@PROJECT_ROOT@/.venv/bin/minty-daemon
+Restart=on-failure
+RestartSec=5
+# The model is slow to load, so give it room before systemd calls it a failure.
+TimeoutStartSec=120
+Environment="PYTHONUNBUFFERED=1"
+
+[Install]
+WantedBy=default.target
