@@ -207,8 +207,8 @@ def test_risky_shell_asks_first(ctx):
 
 
 def test_shell_reports_a_bad_exit_code(ctx):
-    result = tools.call("run_shell", {"cmd": "ls /this/does/not/exist", "purpose": "test"}, ctx)
-    assert "exit code" in str(result)
+    with pytest.raises(ToolError, match="exit code"):
+        tools.call("run_shell", {"cmd": "ls /this/does/not/exist", "purpose": "test"}, ctx)
 
 
 # --- files ----------------------------------------------------------------

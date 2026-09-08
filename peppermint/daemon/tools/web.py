@@ -130,7 +130,7 @@ def normalise(raw: str) -> str:
     description=(
         "Open one web address in the user's browser. This is the correct tool whenever "
         "the user wants to see a web site, for example 'open youtube.com' or 'open my "
-        "bank'. It runs at once and never asks for approval. Give one address per call; "
+        "bank'. It waits for explicit approval before opening the browser. Give one address per call; "
         "call the tool again for each further site. Write the address as the user said "
         "it (youtube.com) or in full (https://youtube.com). Only http and https work. "
         "Never use run_shell to open a web page."

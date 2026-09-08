@@ -87,6 +87,8 @@ class Task:
     steps: list[Step] = field(default_factory=list)
     pending: Confirmation | None = None
     question: str = ""
+    messages: list[dict] = field(default_factory=list)
+    plan: list[dict] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         d = asdict(self)

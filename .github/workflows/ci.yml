@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  syntax:
+    name: Python ${{ matrix.python-version }} syntax
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11"]
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Check Python compatibility
+        run: python -m compileall -q peppermint tests
+
+  test:
+    name: Python 3.12 and GTK
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install desktop test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            python3-venv python3-gi gir1.2-gtk-3.0 gir1.2-xapp-1.0 \
+            xvfb xauth dbus-x11
+
+      - name: Install package and test dependencies
+        # PyGObject must use the matching distro Python and system site packages.
+        run: |
+          /usr/bin/python3 -m venv --system-site-packages .venv
+          .venv/bin/python -m pip install -e ".[dev]"
+
+      - name: Run tests
+        run: dbus-run-session -- xvfb-run -a .venv/bin/python -m pytest tests -q

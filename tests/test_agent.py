@@ -54,7 +54,7 @@ def test_simple_answer_with_no_tool(db):
     assert db.get_task(task_id).status == Status.DONE.value
 
 
-def test_safe_tool_runs_without_approval(db):
+def test_read_only_tool_waits_for_approval(db):
     llm = FakeLLM([
         FakeMessage(tool_calls=[FakeCall("system_info", {"topic": "memory"})]),
         FakeMessage(content="You have enough memory."),
@@ -64,6 +64,9 @@ def test_safe_tool_runs_without_approval(db):
 
     result = agent.run(task_id)
 
+    assert result.status is Status.AWAITING_CONFIRMATION
+    assert db.get_steps(task_id)[0].status == "pending"
+    result = agent.resume_after_confirm(task_id, True)
     assert result.status is Status.DONE
     steps = db.get_steps(task_id)
     assert len(steps) == 1
@@ -169,6 +172,8 @@ def test_unknown_tool_is_repaired_not_fatal(db):
     task_id = db.add_task("what system is this")
 
     result = agent.run(task_id)
+    assert result.status is Status.AWAITING_CONFIRMATION
+    result = agent.resume_after_confirm(task_id, True)
 
     assert result.status is Status.DONE
     steps = db.get_steps(task_id)
@@ -210,7 +215,8 @@ def test_iteration_limit_fails_cleanly(db, monkeypatch):
     from peppermint import config
 
     monkeypatch.setattr(config, "MAX_ITERATIONS", 3)
-    llm = FakeLLM([FakeMessage(tool_calls=[FakeCall("system_info", {"topic": "os"})]) for _ in range(10)])
+    llm = FakeLLM([FakeMessage(tool_calls=[FakeCall(f"unknown{i}", {})]) for i in range(10)])
+    monkeypatch.setattr(config, "MAX_REPAIRS", 20)
     agent = Agent(db, llm)
     task_id = db.add_task("loop for ever")
 
@@ -231,63 +237,18 @@ def test_empty_reply_gets_one_nudge_then_fails(db):
     assert "without an answer" in result.text
 
 
-def test_a_promise_is_not_an_answer(db):
-    """The model often says what it will do. Peppermint must push it on."""
-    llm = FakeLLM([
-        FakeMessage(content="Now, I'll create the folders and move the files."),
-        FakeMessage(tool_calls=[FakeCall("list_dir", {"path": "/tmp"})]),
-        FakeMessage(content="I made three folders and moved ten files."),
-    ])
-    agent = Agent(db, llm)
-    task_id = db.add_task("sort my files")
-
-    result = agent.run(task_id)
-
-    assert result.status is Status.DONE
-    assert "made three folders" in result.text
-    assert len(db.get_steps(task_id)) == 1
-
-
-@pytest.mark.parametrize("text", [
+@pytest.mark.parametrize("answer", [
+    "The task is complete. Let me know if you need further assistance!",
+    "The three largest files are a, b, and c. I will help if you need anything else.",
     "I'll create the folders now.",
-    "I will move the files next.",
-    "Let me check the directory first.",
-    "Next, I need to make the folders.",
-    "First, I should read the settings.",
-    "I am going to install the package.",
 ])
-def test_promise_texts_are_detected(text):
-    from peppermint.daemon.agent import promises_more
-
-    assert promises_more(text)
-
-
-@pytest.mark.parametrize("text", [
-    "I moved ten files into three folders.",
-    "Your theme is Mint-Y-Dark-Aqua.",
-    "The main drive has 56 GB free.",
-    "I could not finish, because the folder does not exist.",
-    "I created a shortcut for the terminal.",
-])
-def test_real_answers_are_not_treated_as_promises(text):
-    from peppermint.daemon.agent import promises_more
-
-    assert not promises_more(text)
-
-
-def test_the_nudge_gives_up_and_accepts_the_text(db, monkeypatch):
-    """A model that only ever promises must not loop for ever."""
-    from peppermint import config
-
-    monkeypatch.setattr(config, "MAX_CONTINUE_NUDGES", 2)
-    llm = FakeLLM([FakeMessage(content="I'll do it now.") for _ in range(8)])
+def test_text_answer_finishes_without_automatic_continuation(db, answer):
+    llm = FakeLLM([FakeMessage(content=answer)])
     agent = Agent(db, llm)
-    task_id = db.add_task("do a thing")
-
-    result = agent.run(task_id)
-
-    assert result.status is Status.DONE
-    assert llm.calls and len(llm.calls) == 3  # first try plus two nudges
+    task_id = db.add_task("list the top three files")
+    assert agent.run(task_id).status is Status.DONE
+    assert len(llm.calls) == 1
+    assert db.get_task(task_id).result == answer
 
 
 def test_history_survives_and_grows(db):
@@ -317,3 +278,92 @@ def test_every_tool_has_a_valid_schema():
         assert function["name"]
         assert function["description"]
         assert function["parameters"]["type"] == "object"
+
+
+@pytest.mark.parametrize('name,args', [
+    ('run_shell', {'cmd': 'pwd', 'purpose': 'Inspect location'}),
+    ('read_file', {'path': '/tmp/example'}),
+    ('open_url', {'url': 'https://example.com'}),
+    ('system_info', {'topic': 'memory'}),
+    ('make_dir', {'path': '/tmp/example'}),
+])
+def test_computer_tools_do_not_execute_before_permission(db, monkeypatch, name, args):
+    from peppermint.daemon.tools.registry import REGISTRY
+    import functools
+    original = REGISTRY[name].func
+
+    @functools.wraps(original)
+    def forbidden(*args, **kwargs):
+        pytest.fail('Tool executed without permission')
+
+    monkeypatch.setattr(REGISTRY[name], 'func', forbidden)
+    agent = Agent(db, FakeLLM([FakeMessage(tool_calls=[FakeCall(name, args)])]))
+    task_id = db.add_task('Do some work')
+    assert agent.run(task_id).status is Status.AWAITING_CONFIRMATION
+    assert agent.resume_after_confirm(task_id, False).status is Status.DONE
+
+
+def test_choices_and_conversation_survive_reopening(tmp_path):
+    path = tmp_path / 'history.db'
+    db = Database(path)
+    task_id = db.add_task('Help me organize files')
+    agent = Agent(db, FakeLLM([
+        FakeMessage(tool_calls=[FakeCall('ask_user', {
+            'question': 'How should I organize them?',
+            'options': ['By type', 'By date'],
+        })]),
+        FakeMessage(content='You chose type.'),
+        FakeMessage(content='We can do that next.'),
+    ]))
+    assert agent.run(task_id).status is Status.AWAITING_INPUT
+    assert db.get_steps(task_id)[0].args['options'] == ['By type', 'By date']
+    agent.resume_after_answer(task_id, 'By type')
+    agent.follow_up(task_id, 'What about photos?')
+    messages = Database(path).get_task(task_id).to_dict()['messages']
+    assert [m['content'] for m in messages if m['role'] == 'user'] == [
+        'Help me organize files', 'By type', 'What about photos?']
+    assert [m['content'] for m in messages if m['role'] == 'assistant'] == [
+        'You chose type.', 'We can do that next.']
+
+
+def test_internal_nudges_are_not_shown_as_user_prompts(db):
+    task_id = db.add_task('Hello')
+    agent = Agent(db, FakeLLM([FakeMessage(), FakeMessage(content='Hello!')]))
+    agent.run(task_id)
+    assert [m['content'] for m in db.get_task(task_id).messages if m['role'] == 'user'] == ['Hello']
+
+
+def test_followup_is_visible_before_model_starts(db):
+    llm = FakeLLM([FakeMessage(content="First answer."), FakeMessage(content="Second answer.")])
+    agent = Agent(db, llm)
+    task_id = db.add_task("First prompt")
+    agent.run(task_id)
+    agent.queue_follow_up(task_id, "Second prompt")
+    task = db.get_task(task_id)
+    assert task.status == "queued"
+    assert task.result == ""
+    assert task.messages[-1] == {"role": "user", "content": "Second prompt"}
+    assert len(llm.calls) == 1
+    agent.run(task_id)
+    assert len(llm.calls) == 2
+    assert [m['content'] for m in db.get_task(task_id).messages if m['role'] == 'user'] == [
+        'First prompt', 'Second prompt']
+
+
+def test_duplicate_approval_never_restarts_finished_response(db):
+    llm = FakeLLM([FakeMessage(content="Done. Let me know if you need anything else.")])
+    agent = Agent(db, llm)
+    task_id = db.add_task("hello")
+    agent.run(task_id)
+    for _ in range(5):
+        assert agent.resume_after_confirm(task_id, True).status is Status.DONE
+    assert len(llm.calls) == 1
+
+
+def test_old_automatic_nudges_are_hidden(db):
+    task_id = db.add_task('Hello')
+    db.add_message(task_id, 'user', {'role': 'user', 'content': 'Hello'})
+    db.add_message(task_id, 'user', {'role': 'user', 'content':
+        'You described work you have not done. Do not describe. Call the tool now. '
+        'Write text only when every part of the task is complete.'})
+    assert db.get_task(task_id).messages == [{'role': 'user', 'content': 'Hello'}]

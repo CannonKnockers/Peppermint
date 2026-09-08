@@ -15,6 +15,7 @@ Control flow for a risky action:
 from __future__ import annotations
 
 import inspect
+import json
 from dataclasses import dataclass, field
 from typing import Callable
 
@@ -43,6 +44,7 @@ class Context:
     task_id: int
     db: object = None
     approved: bool = False
+    require_approval: bool = False
 
 
 @dataclass
@@ -106,6 +108,9 @@ def call(name: str, args: dict, ctx: Context):
             f"There is no tool named `{name}`. Use one of: {', '.join(REGISTRY)}."
         )
 
+    if "ctx" in args:
+        raise ToolError("Tool arguments cannot supply execution permissions.")
+
     signature = inspect.signature(entry.func)
     accepted = set(signature.parameters)
     unknown = [k for k in args if k not in accepted and k != "ctx"]
@@ -123,6 +128,12 @@ def call(name: str, args: dict, ctx: Context):
     missing = [r for r in required if r not in args]
     if missing:
         raise ToolError(f"`{name}` needs these arguments: {missing}.")
+
+    if ctx.require_approval and not ctx.approved and name not in ("ask_user", "set_plan"):
+        return Confirm(
+            description=f"{name}\n{json.dumps(args, indent=2, ensure_ascii=False)}",
+            reason="Every computer action requires your permission. Allow runs this exact action once.",
+        )
 
     kwargs = dict(args)
     if entry.wants_context:

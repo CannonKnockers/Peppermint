@@ -25,6 +25,13 @@ def repeat(tool: str, args: dict, times: int):
     return [FakeMessage(tool_calls=[FakeCall(tool, args)]) for _ in range(times)]
 
 
+def run_with_permissions(agent, task_id):
+    result = agent.run(task_id)
+    while result.status is Status.AWAITING_CONFIRMATION:
+        result = agent.resume_after_confirm(task_id, True)
+    return result
+
+
 # --- the key --------------------------------------------------------------
 
 def test_the_same_call_has_the_same_key():
@@ -45,7 +52,7 @@ def test_a_repeated_call_is_blocked_not_run(db):
     agent = Agent(db, llm)
     task_id = db.add_task("do the same thing over and over")
 
-    result = agent.run(task_id)
+    result = run_with_permissions(agent, task_id)
 
     steps = db.get_steps(task_id)
     ran = [s for s in steps if s.status == "ok"]
@@ -60,7 +67,7 @@ def test_the_model_is_told_what_happened_last_time(db):
                   + [FakeMessage(content="Fine, I will stop.")])
     agent = Agent(db, llm)
     task_id = db.add_task("repeat")
-    agent.run(task_id)
+    run_with_permissions(agent, task_id)
 
     warning = [s for s in db.get_steps(task_id) if s.status == "blocked"][0].output
     assert "already made this exact call" in warning
@@ -72,7 +79,7 @@ def test_a_stubborn_loop_stops_the_task(db):
     agent = Agent(db, llm)
     task_id = db.add_task("never give up")
 
-    result = agent.run(task_id)
+    result = run_with_permissions(agent, task_id)
 
     assert result.status is Status.FAILED
     assert "same action" in result.text
@@ -109,23 +116,41 @@ def test_different_calls_are_not_blocked(db):
     agent = Agent(db, llm)
     task_id = db.add_task("tell me about this computer")
 
-    result = agent.run(task_id)
+    result = run_with_permissions(agent, task_id)
 
     assert result.status is Status.DONE
     assert len([s for s in db.get_steps(task_id) if s.status == "ok"]) == 5
     assert not [s for s in db.get_steps(task_id) if s.status == "blocked"]
 
 
-def test_the_count_survives_a_follow_up(db):
-    """A loop that spans two runs is still a loop."""
+def test_new_user_turn_can_repeat_a_successful_inspection(db):
     agent = Agent(db, FakeLLM(repeat("system_info", {"topic": "os"}, 2)
                               + [FakeMessage(content="Done once.")]))
     task_id = db.add_task("first go")
-    agent.run(task_id)
+    run_with_permissions(agent, task_id)
+    agent.llm = FakeLLM(repeat("system_info", {"topic": "os"}, 1)
+                        + [FakeMessage(content="Checked again.")])
+    result = agent.follow_up(task_id, "check again")
+    assert result.status is Status.AWAITING_CONFIRMATION
+    result = agent.resume_after_confirm(task_id, True)
+    assert result.status is Status.DONE
+    assert len([s for s in db.get_steps(task_id) if s.status == "ok"]) == 3
 
-    agent.llm = FakeLLM(repeat("system_info", {"topic": "os"}, 3)
-                        + [FakeMessage(content="Done twice.")])
-    agent.follow_up(task_id, "do it again")
 
-    ran = [s for s in db.get_steps(task_id) if s.status == "ok"]
-    assert len(ran) == config.MAX_SAME_CALL, "the earlier attempts must still count"
+def test_shell_purpose_cannot_evade_loop_guard():
+    assert attempt_key('run_shell', {'cmd': 'false', 'purpose': 'first'}) == attempt_key(
+        'run_shell', {'cmd': 'false', 'purpose': 'second'})
+
+
+def test_approval_does_not_reset_model_call_budget(db, monkeypatch):
+    monkeypatch.setattr(config, 'MAX_ITERATIONS', 2)
+    agent = Agent(db, FakeLLM([
+        FakeMessage(tool_calls=[FakeCall('system_info', {'topic': 'os'})]),
+        FakeMessage(tool_calls=[FakeCall('system_info', {'topic': 'memory'})]),
+        FakeMessage(content='Should not get this far.'),
+    ]))
+    task_id = db.add_task('Gather facts')
+    assert agent.run(task_id).status is Status.AWAITING_CONFIRMATION
+    assert agent.resume_after_confirm(task_id, True).status is Status.AWAITING_CONFIRMATION
+    assert agent.resume_after_confirm(task_id, True).status is Status.FAILED
+    assert len(agent.llm.calls) == 2

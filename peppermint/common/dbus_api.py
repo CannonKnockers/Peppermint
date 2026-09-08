@@ -31,6 +31,11 @@ DAEMON_XML = """
       <arg type="i" name="id" direction="in"/>
       <arg type="b" name="approved" direction="in"/>
     </method>
+    <method name="ConfirmAction">
+      <arg type="i" name="id" direction="in"/>
+      <arg type="i" name="confirmation_id" direction="in"/>
+      <arg type="b" name="approved" direction="in"/>
+    </method>
     <method name="Answer">
       <arg type="i" name="id" direction="in"/>
       <arg type="s" name="text" direction="in"/>

@@ -156,9 +156,19 @@ class Daemon:
             task = self.db.get_task(args[0])
             return GLib.Variant("(s)", (task.to_json() if task else "null",))
 
+        if method == "ConfirmAction":
+            task_id, confirmation_id, approved = int(args[0]), int(args[1]), bool(args[2])
+            pending = self.db.pending_confirmation(task_id)
+            if pending is None or pending.id != confirmation_id:
+                raise ValueError("This action is no longer waiting for approval. Refresh the conversation.")
+            self.jobs.put(Job("confirm", task_id, (approved, confirmation_id)))
+            return None
+
         if method == "Confirm":
             task_id, approved = int(args[0]), bool(args[1])
-            self.jobs.put(Job("confirm", task_id, approved))
+            pending = self.db.pending_confirmation(task_id)
+            if pending is not None:
+                self.jobs.put(Job("confirm", task_id, (approved, pending.id)))
             return None
 
         if method == "Answer":
@@ -166,13 +176,14 @@ class Daemon:
             return None
 
         if method == "Chat":
-            self.jobs.put(Job("chat", int(args[0]), args[1]))
+            task_id = int(args[0])
+            self.agent.queue_follow_up(task_id, args[1])
+            self.jobs.put(Job("run", task_id))
             return None
 
         if method == "Cancel":
             task_id = int(args[0])
-            self.db.set_status(task_id, Status.CANCELLED)
-            self._emit_update(task_id, Status.CANCELLED)
+            self.agent.cancel(task_id)
             return None
 
         if method == "Undo":
@@ -274,7 +285,8 @@ class Daemon:
         if job.kind == "run":
             result = self.agent.run(job.task_id)
         elif job.kind == "confirm":
-            result = self.agent.resume_after_confirm(job.task_id, bool(job.payload))
+            approved, confirmation_id = job.payload
+            result = self.agent.resume_after_confirm(job.task_id, approved, confirmation_id)
         elif job.kind == "answer":
             result = self.agent.resume_after_answer(job.task_id, str(job.payload))
         elif job.kind == "chat":

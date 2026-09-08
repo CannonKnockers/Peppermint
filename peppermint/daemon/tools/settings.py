@@ -68,7 +68,7 @@ def gsettings_list(schema: str = "", search: str = ""):
     name="gsettings_set",
     description=(
         "Change one desktop setting. Peppermint applies a normal desktop setting at once and "
-        "keeps the old value, so you can undo it. Any other schema needs approval."
+        "keeps the old value, so you can undo it. Every change needs approval."
     ),
     parameters={
         "type": "object",

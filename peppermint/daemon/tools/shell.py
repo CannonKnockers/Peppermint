@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import signal
 import subprocess
 
 from peppermint import config
@@ -11,11 +13,20 @@ from peppermint.daemon.tools.registry import Confirm, Context, ToolError, tool, 
 SAFE_ENV_NOTE = "Peppermint runs the command with your normal user account."
 
 
+def _output(stdout: str, stderr: str) -> str:
+    parts = []
+    if stdout.strip():
+        parts.append(truncate(stdout.strip()))
+    if stderr.strip():
+        parts.append("[stderr] " + truncate(stderr.strip(), 1000))
+    return "\n".join(parts)
+
+
 @tool(
     name="run_shell",
     description=(
         "Run one shell command and get its output. Use this to inspect the system. "
-        "Read-only commands run at once. Any other command needs approval from the user. "
+        "Every command needs approval from the user, including read-only commands. "
         "Prefer a dedicated tool (read_file, gsettings_set, apt_install) when one exists."
     ),
     parameters={
@@ -41,21 +52,44 @@ def run_shell(cmd: str, purpose: str = "", timeout: int | None = None, ctx: Cont
 
     timeout = int(timeout or config.SHELL_TIMEOUT_S)
     timeout = max(1, min(timeout, 300))
-    try:
-        proc = subprocess.run(
-            ["/bin/bash", "-lc", cmd],
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-        )
-    except subprocess.TimeoutExpired:
-        raise ToolError(f"The command did not finish in {timeout} seconds.")
+    # A separate process group lets a timeout stop the command's children too.
+    # Killing only bash can leave its actual work running after we report failure.
+    with subprocess.Popen(
+        ["/bin/bash", "-lc", cmd],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        start_new_session=True,
+    ) as proc:
+        try:
+            stdout, stderr = proc.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            try:
+                stdout, stderr = proc.communicate(timeout=1)
+            except subprocess.TimeoutExpired as exc:
+                # A command can deliberately detach a child into another session.
+                # Do not wait forever for such a child to close inherited pipes.
+                def decoded(value):
+                    return value.decode(errors="replace") if isinstance(value, bytes) else value or ""
 
-    parts = []
-    if proc.stdout.strip():
-        parts.append(truncate(proc.stdout.strip()))
-    if proc.stderr.strip():
-        parts.append("[stderr] " + truncate(proc.stderr.strip(), 1000))
+                stdout, stderr = decoded(exc.stdout), decoded(exc.stderr)
+                proc.stdout.close()
+                proc.stderr.close()
+            output = _output(stdout, stderr)
+            raise ToolError(
+                f"The command did not finish in {timeout} seconds. "
+                "Its process group was stopped; partial changes may remain."
+                + (f"\n{output}" if output else "")
+            ) from None
+
+    output = _output(stdout, stderr)
     if proc.returncode != 0:
-        parts.append(f"[exit code {proc.returncode}]")
-    return "\n".join(parts) if parts else "[the command produced no output]"
+        raise ToolError(
+            f"The command failed with exit code {proc.returncode}. Partial changes may remain."
+            + (f"\n{output}" if output else "")
+        )
+    return output or "[the command produced no output]"

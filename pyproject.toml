@@ -6,8 +6,20 @@ build-backend = "setuptools.build_meta"
 name = "peppermint"
 version = "0.1.0"
 description = "A local AI helper for the Linux Mint desktop"
+readme = "README.md"
+license = { file = "LICENSE" }
+authors = [{ name = "Jesse Maxwell", email = "jesse.c.maxwell@gmail.com" }]
 requires-python = ">=3.10"
-dependencies = ["ollama>=0.4"]
+dependencies = ["ollama>=0.6.2"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: X11 Applications :: GTK",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+]
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]

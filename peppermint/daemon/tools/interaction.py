@@ -7,12 +7,12 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from peppermint.daemon.tools.registry import Ask, Context, tool, truncate
+from peppermint.daemon.tools.registry import Ask, Context, ToolError, tool, truncate
 
 
 @tool(
     name="notify_user",
-    description="Show a desktop notification. Use this for a fact the user wants at once.",
+    description="Show a desktop notification only when the user requests a notification. Answer ordinary questions in conversation text.",
     parameters={
         "type": "object",
         "properties": {
@@ -32,16 +32,23 @@ def notify_user(title: str, body: str, ctx: Context = None):
 @tool(
     name="ask_user",
     description=(
-        "Ask the user one question and wait for the answer. Use this only when you cannot "
-        "continue without the answer. Do not ask for a fact you can find with a tool."
+        "Present a question or selectable choices and wait. When the user asks for options "
+        "before acting, call this tool with two or three options so the window shows buttons. "
+        "Do not write a choice question in ordinary text. Also use when needed information is missing."
     ),
     parameters={
         "type": "object",
-        "properties": {"question": {"type": "string"}},
+        "properties": {"question": {"type": "string"},
+                       "options": {"type": "array", "items": {"type": "string"},
+                                   "minItems": 2, "maxItems": 3}},
         "required": ["question"],
     },
 )
-def ask_user(question: str):
+def ask_user(question: str, options: list[str] | None = None):
+    if options is not None:
+        if (not isinstance(options, list) or not 2 <= len(options) <= 3
+                or any(not isinstance(o, str) or not o.strip() for o in options)):
+            raise ToolError("Provide two or three nonempty text options.")
     return Ask(question=question)
 
 

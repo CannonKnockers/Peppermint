@@ -53,20 +53,17 @@ list.
 
 ## Safety
 
-Peppermint divides every action into two classes.
+Every computer tool waits for your permission, including read-only commands,
+file reads, desktop changes, and opening a browser. The window shows the exact
+tool and arguments. **Allow once** executes that action; **Deny** leaves it unexecuted.
+Asking you a question does not require permission, and selecting an approach
+does not authorize its execution.
 
-**Safe actions run at once.** These only read, or they are easy to undo:
-list a folder, read a file, read a setting, search for a package, change a
-desktop theme.
-
-**Risky actions wait for you.** Peppermint shows you the exact action and two
-buttons. Nothing happens until you click Allow. These include: any command
-that is not on the read-only list, a delete, a write that replaces a file, a
-package install, and a scheduled job.
-
-The rule is strict: if the action is not clearly safe, Peppermint asks. The tool
-layer decides this. The model never decides its own risk class. See
-[peppermint/daemon/safety.py](peppermint/daemon/safety.py).
+Open a task to see your full prompt, conversation, follow-ups, action status,
+and expandable command output. New tasks open automatically. Conversations are
+saved locally and remain available after restarting Peppermint. When there are
+meaningfully different execution approaches, Peppermint can offer two or three
+buttons, with a free-text answer available too.
 
 Peppermint never erases a file. A delete moves the file to the trash.
 
@@ -77,9 +74,7 @@ changed since it asked. If a file became a link, or the arguments moved, Pepperm
 refuses and tells you. Only the first click counts, so two windows cannot both
 approve the same thing.
 
-**Reversible is not the same as harmless.** Peppermint applies a desktop setting
-without asking because it can put it back, not because the change does not
-matter. Every such change is recorded:
+Approved reversible changes are recorded so you can put them back:
 
 ```bash
 peppermint undo                      # list what Peppermint can put back
@@ -120,23 +115,9 @@ Press **Super+Space** to open the window.
 
 ## What Peppermint can do
 
-| Tool | Risk |
-| --- | --- |
-| `run_shell` | Read-only commands are safe. Everything else needs approval. |
-| `read_file`, `list_dir`, `search_files` | Safe |
-| `sort_folder` | Sorts a whole folder into subfolders in one step. Safe inside your home. |
-| `write_file` | Safe for a new file in your home. A replacement needs approval. |
-| `move_file`, `make_dir` | Safe inside your home |
-| `delete_file` | Needs approval. Moves to the trash. |
-| `gsettings_get`, `gsettings_list`, `list_themes` | Safe |
-| `gsettings_set` | Safe for desktop settings. Peppermint keeps the old value. |
-| `set_keybinding`, `list_keybindings` | A new shortcut needs approval |
-| `apt_query`, `list_apps` | Safe |
-| `apt_install` | Needs approval. Asks for your password. |
-| `schedule`, `unschedule`, `list_scheduled` | Needs approval |
-| `open_url` | Safe. Opens a web page at once, without asking. |
-| `system_info`, `notify_user` | Safe |
-| `ask_user` | Stops the task until you answer |
+All computer tools require approval: bash commands, file operations, desktop
+settings, package tools, scheduling, browser opening, notifications, and system
+information. `ask_user` pauses for your answer without executing a computer action.
 
 ## Opening web sites
 
@@ -144,9 +125,8 @@ Press **Super+Space** to open the window.
 peppermint "open x.com, Fidelity and YouTube"
 ```
 
-Peppermint opens each site in your normal browser at once. It does not ask for
-approval, because showing you a page changes nothing on the computer: nothing is
-written, nothing is installed, and you can close the tab.
+Peppermint proposes each site in your normal browser and waits for approval
+before opening it.
 
 You can write the address the way you say it. `youtube.com` becomes
 `https://youtube.com`. A full address works too.
@@ -175,9 +155,11 @@ missed the ninth file every time and still reported success. This is why
 tool reports exactly which files it did not place. Give Peppermint a job it can do
 in few steps, not many.
 
-**It stops early and describes work it has not done.** Peppermint detects text like
-"Now I will create the folders" and pushes the model to continue. See
-`promises_more` in [peppermint/daemon/agent.py](peppermint/daemon/agent.py).
+**A text answer ends the turn.** Peppermint does not automatically ask the model
+to continue after an answer. This prevents completed tasks from looping on
+phrases such as "Let me know if you need anything else." Follow-up prompts are
+saved and shown immediately when submitted. Responses have a 1,024-token limit
+and model requests time out after 60 seconds without a response.
 
 **It sometimes calls a tool that has nothing to do with your idea.** In one
 test it changed the icon theme during a file-sorting task. The safety layer
@@ -237,6 +219,22 @@ The task history lives in `~/.local/share/peppermint/peppermint.db`. The log is
 .venv/bin/python -m pytest tests/ -q
 ```
 
+## Publish to GitHub
+
+The repository includes the CI workflow, issue forms, pull request template,
+security policy, and a publishing helper. Install and authenticate the GitHub
+CLI first:
+
+```bash
+gh auth login
+./scripts/publish-github.sh
+```
+
+The helper creates the private `jescolmax/peppermint` repository, pushes the
+current checkout, and creates a `Peppermint roadmap` Project board. Override
+the defaults with `GITHUB_OWNER`, `GITHUB_REPOSITORY`, and
+`GITHUB_PROJECT_TITLE`.
+
 The tests need no GPU. A fake model drives the agent loop.
 
 ## Fix problems
@@ -254,3 +252,30 @@ If the GPU runs out of memory, lower the context length:
 ```bash
 systemctl --user edit peppermint-daemon        # add Environment="PEPPERMINT_NUM_CTX=8192"
 ```
+
+## Measuring model quality
+
+The unit tests check application behavior; they do not measure the real model's
+competence. Run the local evaluation without executing any proposed actions:
+
+```bash
+.venv/bin/python scripts/evaluate_model.py --repeats 2 --output /tmp/peppermint-eval.json
+```
+
+See the [capability assessment and improvement priorities](docs/evaluations/assessment-2026-09-07.md)
+for measured results, limitations, and local model candidates. Long conversations
+retain their full visible history, while model input keeps recent complete turns
+within a bounded budget; older omitted details may need to be supplied again.
+
+## Video playback alongside AI
+
+Ask Peppermint to show solutions for two video windows and one or two AI prompts.
+It requests permission for a short performance sample, then shows measured
+headroom, local and browser-AI options, tradeoffs and a verification procedure.
+A completed report does not mean the simultaneous playback workload has been
+validated. Peppermint currently queues its own model tasks; enabling parallel
+requests in Ollama alone does not change the app's worker queue.
+
+Complex tasks can track a persistent plan. Stop cancels model generation, and
+failed commands remain visible as failures. Read the [implementation and validation
+notes](docs/evaluations/video-ai-upgrade.md) and see the [window preview](docs/evaluations/peppermint-ui.png).

@@ -43,10 +43,13 @@ TEMPERATURE = _env_float("TEMPERATURE", 0.2)
 TOP_P = _env_float("TOP_P", 0.9)
 REPEAT_PENALTY = _env_float("REPEAT_PENALTY", 1.05)
 THINK = _env("THINK", "0") == "1"
+MODEL_TIMEOUT_S = _env_int("MODEL_TIMEOUT_S", 60)
+MAX_RESPONSE_TOKENS = _env_int("MAX_RESPONSE_TOKENS", 1024)
 KEEP_ALIVE = _env("KEEP_ALIVE", "10m")
 
 LLM_OPTIONS = {
     "num_ctx": NUM_CTX,
+    "num_predict": MAX_RESPONSE_TOKENS,
     "temperature": TEMPERATURE,
     "top_p": TOP_P,
     "repeat_penalty": REPEAT_PENALTY,
@@ -57,8 +60,6 @@ LLM_OPTIONS = {
 # A file-sorting task uses one call per file, plus the checking calls.
 MAX_ITERATIONS = _env_int("MAX_ITERATIONS", 30)
 MAX_REPAIRS = _env_int("MAX_REPAIRS", 3)
-# A small model stops early and describes work it has not done. Push it on.
-MAX_CONTINUE_NUDGES = _env_int("MAX_CONTINUE_NUDGES", 3)
 # The model repeats a failing call instead of learning from it. In one real
 # task it asked for the same install 29 times. Block the third attempt.
 MAX_SAME_CALL = _env_int("MAX_SAME_CALL", 2)

@@ -65,6 +65,17 @@ CREATE TABLE IF NOT EXISTS undo (
     ts        TEXT    NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS task_runs (
+    task_id INTEGER PRIMARY KEY REFERENCES tasks(id) ON DELETE CASCADE,
+    calls_used INTEGER NOT NULL DEFAULT 0,
+    step_start INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS task_plans (
+    task_id INTEGER PRIMARY KEY REFERENCES tasks(id) ON DELETE CASCADE,
+    steps TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS schema_version (
     version INTEGER NOT NULL
 );
@@ -185,7 +196,7 @@ class Database:
             )
             return int(cur.lastrowid)
 
-    def set_status(self, task_id: int, status: Status, **fields) -> None:
+    def set_status(self, task_id: int, status: Status, *, allow_cancelled: bool = False, **fields) -> None:
         cols = ["status = ?", "updated_at = ?"]
         vals: list = [status.value, now()]
         for key, value in fields.items():
@@ -193,7 +204,13 @@ class Database:
             vals.append(value)
         vals.append(task_id)
         with self.connection() as conn:
-            conn.execute(f"UPDATE tasks SET {', '.join(cols)} WHERE id = ?", vals)
+            condition = "" if allow_cancelled or status is Status.CANCELLED else " AND status != 'cancelled'"
+            conn.execute(f"UPDATE tasks SET {', '.join(cols)} WHERE id = ?{condition}", vals)
+            if status.is_final:
+                conn.execute("UPDATE steps SET status = 'cancelled', output = 'This approval is no longer active.' "
+                             "WHERE task_id = ? AND status = 'pending'", (task_id,))
+                conn.execute("UPDATE confirmations SET resolved = 1, approved = 0 "
+                             "WHERE task_id = ? AND resolved = 0", (task_id,))
 
     def get_task(self, task_id: int, with_steps: bool = True) -> Task | None:
         conn = self.connection()
@@ -202,6 +219,10 @@ class Database:
             return None
         task = self._row_to_task(row)
         if with_steps:
+            task.messages = [m for m in self.get_messages(task_id)
+                             if m.get("role") in ("user", "assistant")
+                             and m.get("content") and not m.get("internal")]
+            task.plan = self.get_plan(task_id)
             task.steps = self.get_steps(task_id)
             task.pending = self.pending_confirmation(task_id)
         return task
@@ -213,6 +234,7 @@ class Database:
         ).fetchall()
         tasks = [self._row_to_task(r) for r in rows]
         for task in tasks:
+            task.plan = self.get_plan(task.id)
             if Status(task.status).needs_user:
                 task.pending = self.pending_confirmation(task.id)
         return tasks
@@ -278,6 +300,35 @@ class Database:
             question=row["question"],
         )
 
+    def ensure_run(self, task_id: int, reset: bool = False) -> None:
+        with self.connection() as conn:
+            row = conn.execute("SELECT COALESCE(MAX(id), 0) FROM steps WHERE task_id = ?", (task_id,)).fetchone()
+            if reset:
+                conn.execute("DELETE FROM task_runs WHERE task_id = ?", (task_id,))
+            conn.execute("INSERT OR IGNORE INTO task_runs (task_id, step_start) VALUES (?, ?)",
+                         (task_id, int(row[0])))
+
+    def consume_model_call(self, task_id: int, limit: int) -> bool:
+        with self.connection() as conn:
+            result = conn.execute("UPDATE task_runs SET calls_used = calls_used + 1 "
+                                  "WHERE task_id = ? AND calls_used < ?", (task_id, limit))
+            return result.rowcount == 1
+
+    def run_steps(self, task_id: int) -> list[Step]:
+        row = self.connection().execute("SELECT step_start FROM task_runs WHERE task_id = ?", (task_id,)).fetchone()
+        start = int(row[0]) if row else 0
+        return [step for step in self.get_steps(task_id) if step.id > start]
+
+    def get_plan(self, task_id: int) -> list[dict]:
+        row = self.connection().execute("SELECT steps FROM task_plans WHERE task_id = ?", (task_id,)).fetchone()
+        return json.loads(row['steps']) if row else []
+
+    def set_plan(self, task_id: int, steps: list[dict]) -> None:
+        with self.connection() as conn:
+            conn.execute("INSERT INTO task_plans (task_id, steps) VALUES (?, ?) "
+                         "ON CONFLICT(task_id) DO UPDATE SET steps = excluded.steps",
+                         (task_id, json.dumps(steps)))
+
     # --- steps -------------------------------------------------------------
 
     def add_step(self, task_id: int, tool: str, args: dict, risk: str,
@@ -339,7 +390,15 @@ class Database:
         out = []
         for r in rows:
             try:
-                out.append(json.loads(r["content"]))
+                message = json.loads(r["content"])
+                # Older versions stored automatic continuations as user text.
+                if message.get("role") == "user" and message.get("content") in (
+                    "You described work you have not done. Do not describe. Call the tool now. "
+                    "Write text only when every part of the task is complete.",
+                    "Continue. Call a tool, or write the final summary.",
+                ):
+                    message["internal"] = True
+                out.append(message)
             except (ValueError, TypeError):
                 out.append({"role": r["role"], "content": r["content"]})
         return out
