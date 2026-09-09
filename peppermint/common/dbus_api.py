@@ -42,6 +42,15 @@ DAEMON_XML = """
       <arg type="s" name="new_idea" direction="in"/>
       <arg type="i" name="id" direction="out"/>
     </method>
+    <method name="ListPlugins">
+      <arg type="s" name="json" direction="out"/>
+    </method>
+    <method name="EnablePlugin">
+      <arg type="s" name="name" direction="in"/>
+    </method>
+    <method name="DisablePlugin">
+      <arg type="s" name="name" direction="in"/>
+    </method>
     <method name="ExportTask">
       <arg type="i" name="task_id" direction="in"/>
       <arg type="s" name="archive_path" direction="out"/>

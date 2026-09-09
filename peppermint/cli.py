@@ -12,6 +12,7 @@
     peppermint export 3 / peppermint export --all
     peppermint import tasks.peppermint         restore task history with new IDs
     peppermint toggle                         open or hide the window
+    peppermint plugin list | enable <name> | disable <name>
 """
 
 from __future__ import annotations
@@ -209,6 +210,25 @@ def cmd_import(args) -> int:
     return 0
 
 
+def cmd_plugin(args) -> int:
+    if args.action == "list":
+        response = dbus_api.call_daemon("ListPlugins", None, GLib.VariantType("(s)"))
+        plugins = json.loads(response.unpack()[0])
+        if not plugins:
+            print("No plugins found in ~/.config/peppermint/tools.")
+            return 0
+        for plugin in plugins:
+            state = "enabled" if plugin["enabled"] else "disabled"
+            tools = ", ".join(plugin["tools"]) if plugin["tools"] else "-"
+            print(f"{plugin['name']}: {state} ({tools})")
+        return 0
+
+    method = "EnablePlugin" if args.action == "enable" else "DisablePlugin"
+    dbus_api.call_daemon(method, GLib.Variant("(s)", (args.name,)))
+    print(f"Plugin '{args.name}' {args.action}d.")
+    return 0
+
+
 def _positive_task_id(value: str) -> int:
     try:
         task_id = int(value)
@@ -365,6 +385,20 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("idea", nargs="+")
     p.set_defaults(func=cmd_fork)
 
+    p = subs.add_parser("plugin", help="show, enable, and disable plugins")
+    plugin_actions = p.add_subparsers(dest="action", required=True)
+
+    list_plugins = plugin_actions.add_parser("list", help="show available plugins")
+    list_plugins.set_defaults(func=cmd_plugin, action="list")
+
+    enable_plugin = plugin_actions.add_parser("enable", help="enable a plugin")
+    enable_plugin.add_argument("name", help="plugin name")
+    enable_plugin.set_defaults(func=cmd_plugin, action="enable")
+
+    disable_plugin = plugin_actions.add_parser("disable", help="disable a plugin")
+    disable_plugin.add_argument("name", help="plugin name")
+    disable_plugin.set_defaults(func=cmd_plugin, action="disable")
+
     p = subs.add_parser("undo", help="list or put back the changes Peppermint made")
     p.add_argument("-n", "--limit", type=int, default=20)
     p.add_argument("--apply", action="store_true", help="put the change back")
@@ -375,7 +409,7 @@ def build_parser() -> argparse.ArgumentParser:
     p = subs.add_parser("toggle", help="open or hide the Peppermint window")
     p.set_defaults(func=cmd_toggle)
 
-    p = subs.add_parser("recover", help="open the independent fullscreen recovery controls")
+    p = subs.add_parser("recover", help="open the independent recovery window")
     p.set_defaults(func=cmd_recover)
 
     return parser
@@ -388,7 +422,7 @@ def main(argv: list[str] | None = None) -> int:
     # `peppermint "an idea"` is the same as `peppermint add "an idea"`.
     known = {"add", "list", "show", "allow", "deny", "answer", "retest", "chat",
              "cancel", "watch", "health", "export", "import", "fork", "undo",
-             "toggle", "recover", "-h", "--help"}
+             "toggle", "recover", "plugin", "-h", "--help"}
     if argv and argv[0] not in known:
         argv.insert(0, "add")
 

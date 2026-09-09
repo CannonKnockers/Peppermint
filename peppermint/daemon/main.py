@@ -25,6 +25,7 @@ from peppermint.common.models import Status  # noqa: E402
 from peppermint.daemon import notifier, undo  # noqa: E402
 from peppermint.daemon.agent import Agent  # noqa: E402
 from peppermint.daemon.db import Database  # noqa: E402
+from peppermint.daemon.plugins import PluginManager  # noqa: E402
 from peppermint.daemon.llm import LLM, LLMError  # noqa: E402
 
 log = logging.getLogger("peppermint.daemon")
@@ -53,6 +54,8 @@ class Daemon:
     def __init__(self):
         self.db = Database()
         self.llm = LLM()
+        self.plugins = PluginManager()
+        self.plugins.load_plugins()
         self.agent = Agent(self.db, self.llm, on_update=self._emit_update)
         self.jobs: queue.Queue[Job | None] = queue.Queue()
         self.loop = GLib.MainLoop()
@@ -207,6 +210,17 @@ class Daemon:
         if method == "GetTask":
             task = self.db.get_task(args[0])
             return GLib.Variant("(s)", (task.to_json() if task else "null",))
+
+        if method == "ListPlugins":
+            return GLib.Variant("(s)", (self.plugins.list_for_dbus(),))
+
+        if method == "EnablePlugin":
+            self.plugins.enable(args[0])
+            return None
+
+        if method == "DisablePlugin":
+            self.plugins.disable(args[0])
+            return None
 
         if method in ("ExportTask", "ExportAll"):
             from peppermint.daemon.archive import export_archive

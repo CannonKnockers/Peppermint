@@ -46,6 +46,21 @@ class Context:
     approved: bool = False
     require_approval: bool = False
 
+    def notify(self, title: str, body: str) -> None:
+        from peppermint.daemon import notifier
+
+        notifier.send(title, body)
+
+    def ask_approval(self, description: str, reason: str = ""):
+        if self.require_approval and not self.approved:
+            return Confirm(description=description, reason=reason)
+        return None
+
+    def run_command(self, cmd: str, purpose: str = "", timeout: int | None = None):
+        from peppermint.daemon.tools.shell import run_shell
+
+        return run_shell(cmd, purpose=purpose, timeout=timeout, ctx=self)
+
 
 @dataclass
 class Tool:
@@ -54,6 +69,8 @@ class Tool:
     parameters: dict
     func: Callable
     wants_context: bool = False
+    requires_approval: bool = True
+    plugin: str | None = None
 
     def schema(self) -> dict:
         return {
@@ -73,12 +90,21 @@ REGISTRY: dict[str, Tool] = {}
 INTERNAL_TOOLS = frozenset({"ask_user", "set_plan", "linux_reference", "request_retest"})
 
 
-def tool(name: str, description: str, parameters: dict):
+def tool(name: str, description: str, parameters: dict, requires_approval: bool = True,
+         plugin: str | None = None):
     """Register a function as a tool."""
 
     def decorator(func: Callable) -> Callable:
         wants_context = "ctx" in inspect.signature(func).parameters
-        REGISTRY[name] = Tool(name, description, parameters, func, wants_context)
+        REGISTRY[name] = Tool(
+            name,
+            description,
+            parameters,
+            func,
+            wants_context,
+            requires_approval=requires_approval,
+            plugin=plugin,
+        )
         return func
 
     return decorator
@@ -133,7 +159,7 @@ def call(name: str, args: dict, ctx: Context):
     if missing:
         raise ToolError(f"`{name}` needs these arguments: {missing}.")
 
-    if ctx.require_approval and not ctx.approved and name not in INTERNAL_TOOLS:
+    if ctx.require_approval and not ctx.approved and name not in INTERNAL_TOOLS and entry.requires_approval:
         return Confirm(
             description=f"{name}\n{json.dumps(args, indent=2, ensure_ascii=False)}",
             reason="Every computer action requires your permission. Allow runs this exact action once.",
@@ -141,10 +167,25 @@ def call(name: str, args: dict, ctx: Context):
 
     kwargs = dict(args)
     if entry.wants_context:
-        kwargs["ctx"] = ctx
+        if entry.plugin is not None:
+            from peppermint.daemon import plugins
+            kwargs["ctx"] = plugins.plugin_context(ctx)
+        else:
+            kwargs["ctx"] = ctx
 
     try:
-        return entry.func(**kwargs)
+        try:
+            return entry.func(**kwargs)
+        except ToolError:
+            raise
+        except Exception as exc:
+            if entry.plugin is not None:
+                try:
+                    from peppermint.daemon import plugins
+                    plugins.handle_plugin_failure(entry.plugin, name, exc)
+                except Exception:
+                    pass
+            raise
     except ToolError:
         raise
     except TypeError as exc:
