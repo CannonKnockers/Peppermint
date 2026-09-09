@@ -10,7 +10,7 @@ import time
 
 import ollama
 
-MODEL = sys.argv[1] if len(sys.argv) > 1 else "qwen3:8b"
+MODEL = sys.argv[1] if len(sys.argv) > 1 else "spark"
 
 TOOLS = [
     {

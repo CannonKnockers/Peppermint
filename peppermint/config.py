@@ -3,12 +3,15 @@
 Environment variables with the PEPPERMINT_ prefix override the defaults, so you can
 try a different model without editing code:
 
-    PEPPERMINT_MODEL=qwen2.5:7b-instruct-q4_K_M peppermint-daemon
+    PEPPERMINT_MODEL=spark
+    PEPPERMINT_MODEL_SPARK=qwen2.5:1.5b-instruct
+    peppermint-daemon
 
 To save usage during experimentation, you can also use:
 
-    PEPPERMINT_MODEL=spark
-    PEPPERMINT_MODEL_SPARK=qwen2.5:1.5b-instruct
+    PEPPERMINT_MODEL=astra
+    PEPPERMINT_MODEL_ASTRA=qwen3:8b
+    peppermint-daemon
 """
 
 from __future__ import annotations
@@ -51,9 +54,9 @@ def _resolve_model_alias(value: str, fallback: str) -> str:
 
 # --- Model -----------------------------------------------------------------
 
-MODEL = _resolve_model_alias(_env("MODEL", "qwen3:8b"), _env("MODEL_ASTRA", "qwen3:8b"))
+MODEL = _resolve_model_alias(_env("MODEL", "spark"), _env("MODEL_SPARK", "qwen2.5:1.5b-instruct"))
 FALLBACK_MODEL = _resolve_model_alias(
-    _env("FALLBACK_MODEL", "qwen2.5:7b-instruct-q4_K_M"),
+    _env("FALLBACK_MODEL", "qwen2.5:1.5b-instruct"),
     _env("MODEL_SPARK", "qwen2.5:1.5b-instruct"),
 )
 OLLAMA_HOST = _env("OLLAMA_HOST", "http://127.0.0.1:11434")

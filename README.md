@@ -393,16 +393,15 @@ Every parameter is in [peppermint/config.py](peppermint/config.py). An environme
 variable with the `PEPPERMINT_` prefix overrides any of them:
 
 ```bash
-PEPPERMINT_MODEL=astra systemctl --user restart peppermint-daemon          # older profile
 PEPPERMINT_MODEL=spark PEPPERMINT_MODEL_SPARK=qwen2.5:1.5b-instruct systemctl --user restart peppermint-daemon
 PEPPERMINT_MODEL=qwen2.5:7b-instruct-q4_K_M systemctl --user restart peppermint-daemon
 ```
 
 | Name | Default | Meaning |
 | --- | --- | --- |
-| `PEPPERMINT_MODEL` | `qwen3:8b` | The model Ollama serves (`spark` and `astra` are alias profiles) |
+| `PEPPERMINT_MODEL` | `spark` | The model Ollama serves (`spark` is default) |
 | `PEPPERMINT_MODEL_SPARK` | `qwen2.5:1.5b-instruct` | Alias target when `PEPPERMINT_MODEL=spark` |
-| `PEPPERMINT_MODEL_ASTRA` | `qwen3:8b` | Alias target when `PEPPERMINT_MODEL=astra` |
+| `PEPPERMINT_MODEL_ASTRA` | `qwen3:8b` | Legacy alias target when `PEPPERMINT_MODEL=astra` |
 | `PEPPERMINT_NUM_CTX` | `16384` | The context length. Lower it if the GPU fills. |
 | `PEPPERMINT_TEMPERATURE` | `0.2` | Low, because Peppermint selects tools |
 | `PEPPERMINT_MAX_ITERATIONS` | `30` | Tool calls per task |

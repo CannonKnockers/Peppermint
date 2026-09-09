@@ -5,7 +5,7 @@ set -euo pipefail
 
 PREFIX="$HOME/.local/ollama"
 DIST="$HOME/.local/share/ollama-dist"
-MODEL="${PEPPERMINT_MODEL:-qwen3:8b}"
+MODEL="${PEPPERMINT_MODEL:-spark}"
 case "${MODEL,,}" in
   spark)
     MODEL="${PEPPERMINT_MODEL_SPARK:-qwen2.5:1.5b-instruct}"
