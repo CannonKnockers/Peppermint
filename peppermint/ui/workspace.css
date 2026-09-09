@@ -40,3 +40,12 @@
 .task-summary { padding: 12px; }
 .summary-number { color: #b6e4c8; font-size: 26px; font-weight: 700; }
 .overview-card .task-link { padding: 6px 12px; }
+
+/* Quiet history rail and a single spacious conversation. */
+.conversation-list row { margin-bottom: 3px; }
+.conversation-list .task-card { background-image: none; background-color: transparent; border: none; }
+.conversation-list row:selected { background-color: #395642; }
+.conversation-list .task-title { font-size: 13px; font-weight: normal; }
+.conversation-composer { padding: 12px 0; }
+
+.active-transcript { background-image: none; background-color: transparent; border: none; }

@@ -8,6 +8,7 @@ gi.require_version("Gtk", "3.0")
 from gi.repository import GLib, Gtk, Pango  # noqa: E402
 
 from peppermint.common.retest import read_record
+from peppermint.ui.secret_entry import configure_secret_entry
 
 STATUS_TEXT = {
     "queued": "waiting",
@@ -38,12 +39,15 @@ STEP_MARK = {"ok": "✓", "error": "!", "pending": "…", "denied": "✕", "aske
 class TaskRow(Gtk.ListBoxRow):
     """Shows one task. Expands to show the steps and any question."""
 
-    def __init__(self, task: dict, client):
+    def __init__(self, task: dict, client, *, compact: bool = False, external_composer: bool = False):
         super().__init__()
         self.task_id = int(task["id"])
         self.client = client
+        self.compact = compact
+        self.external_composer = external_composer
         self.expanded = False
         self._status = ""
+        self.reply_prompt = ""
         # ListTasks sends no steps. Keep the last full detail, so a list
         # refresh never wipes an open step log.
         self._steps: list[dict] = []
@@ -60,6 +64,8 @@ class TaskRow(Gtk.ListBoxRow):
         outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
         self.set_margin_bottom(12)
         outer.get_style_context().add_class("task-card")
+        if external_composer:
+            outer.get_style_context().add_class("active-transcript")
         self.add(outer)
 
         # --- header ---------------------------------------------------------
@@ -72,6 +78,8 @@ class TaskRow(Gtk.ListBoxRow):
 
         self.arrow = Gtk.Label(label="▸")
         self.arrow.get_style_context().add_class("dim-label")
+        self.arrow.set_no_show_all(compact or external_composer)
+        self.arrow.set_visible(not compact and not external_composer)
         header.pack_start(self.arrow, False, False, 0)
 
         self.branch = Gtk.Label(label="⎇")
@@ -102,26 +110,42 @@ class TaskRow(Gtk.ListBoxRow):
         header.pack_end(self.stop_button, False, False, 0)
 
         # --- detail ---------------------------------------------------------
-        self.revealer = Gtk.Revealer()
-        self.revealer.set_transition_type(Gtk.RevealerTransitionType.SLIDE_DOWN)
-        self.revealer.set_transition_duration(180)
-        outer.pack_start(self.revealer, False, False, 0)
+        if compact:
+            self.revealer = None
+            self.detail = None
 
-        self.detail = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
-        self.detail.set_margin_start(16)
-        self.detail.set_margin_end(16)
-        self.detail.set_margin_bottom(16)
-        self.detail.get_style_context().add_class("conversation")
-        self.revealer.add(self.detail)
+        else:
+            self.revealer = Gtk.Revealer()
+            self.revealer.set_transition_type(Gtk.RevealerTransitionType.SLIDE_DOWN)
+            self.revealer.set_transition_duration(180)
+            outer.pack_start(self.revealer, False, False, 0)
+            self.detail = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
+            self.detail.set_margin_start(16)
+            self.detail.set_margin_end(16)
+            self.detail.set_margin_bottom(16)
+            self.detail.get_style_context().add_class("conversation")
+            self.revealer.add(self.detail)
 
+        if compact:
+            self.pill.set_no_show_all(True)
+            self.pill.hide()
+            self.idea.set_max_width_chars(22)
+        if external_composer:
+            self.idea.set_no_show_all(True)
+            self.idea.hide()
+            self.pill.set_no_show_all(True)
+            self.pill.hide()
         self.update(task)
 
     # --- expansion ---------------------------------------------------------
 
     def toggle(self) -> None:
+        if self.compact:
+            return
         self.expanded = not self.expanded
         self.arrow.set_label("▾" if self.expanded else "▸")
-        self.revealer.set_reveal_child(self.expanded)
+        if self.revealer is not None:
+            self.revealer.set_reveal_child(self.expanded)
         if self.expanded:
             self.client.request_detail(self.task_id)
 
@@ -145,6 +169,9 @@ class TaskRow(Gtk.ListBoxRow):
             self._retest = task.get("retest")
         task = dict(task, messages=self._messages, plan=self._plan, retest=self._retest)
 
+        self.reply_prompt = task.get("question") or next(
+            (m.get("content", "") for m in reversed(self._messages) if m.get("role") == "assistant"),
+            task.get("result", ""))
         self.idea.set_text(task["idea"].replace("\n", " "))
         self.idea.set_tooltip_text(task["idea"])
         self.branch.set_visible(bool(int(task.get("parent_task_id", 0) or 0)))
@@ -165,15 +192,16 @@ class TaskRow(Gtk.ListBoxRow):
             self.spinner.stop()
             self.spinner.hide()
 
-        self.stop_button.set_visible(status in (
+        self.stop_button.set_visible(not self.compact and status in (
             "queued", "planning", "running", "awaiting-confirmation", "awaiting-input"))
 
-        if status in ("awaiting-confirmation", "awaiting-input") and not self.expanded:
+        if (not self.compact and status in ("awaiting-confirmation", "awaiting-input")
+                and not self.expanded):
             self.expanded = True
             self.arrow.set_label("▾")
             self.revealer.set_reveal_child(True)
 
-        if self.expanded:
+        if self.expanded and not self.compact and self.revealer is not None:
             key = repr(tuple(task.get(k) for k in (
                 "idea", "status", "messages", "steps", "plan", "pending", "question", "retest", "result", "error")))
             if key != self._detail_key:
@@ -181,6 +209,8 @@ class TaskRow(Gtk.ListBoxRow):
                 self._detail_key = key
 
     def _build_detail(self, task: dict) -> None:
+        if self.compact or self.detail is None:
+            return
         focused = None
         for kind, entry in (("chat", self._chat_entry), ("answer", self._answer_entry)):
             if entry is not None and entry.has_focus():
@@ -216,7 +246,7 @@ class TaskRow(Gtk.ListBoxRow):
         if task.get("error"):
             self.detail.pack_start(self._text_block(task["error"], "error"), False, False, 0)
 
-        if task["status"] in ("done", "failed", "cancelled"):
+        if not self.external_composer and task["status"] in ("done", "failed", "cancelled"):
             self.detail.pack_start(self._chat_box(), False, False, 0)
 
         self.detail.show_all()
@@ -421,6 +451,7 @@ class TaskRow(Gtk.ListBoxRow):
 
         entry = Gtk.Entry()
         self._answer_entry = entry
+        configure_secret_entry(entry, question)
         entry.set_placeholder_text("Add details without recording a test result…" if retest else "Your answer…")
         entry.set_text(self._answer_draft)
         entry.connect("changed", lambda widget: setattr(self, "_answer_draft", widget.get_text()))
@@ -452,6 +483,7 @@ class TaskRow(Gtk.ListBoxRow):
         controls = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         entry = Gtk.Entry()
         self._chat_entry = entry
+        configure_secret_entry(entry, self.reply_prompt)
         entry.set_placeholder_text("Ask a follow-up or describe the next step…")
         entry.set_text(self._chat_draft)
         entry.connect("changed", lambda widget: setattr(self, "_chat_draft", widget.get_text()))

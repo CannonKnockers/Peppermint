@@ -416,7 +416,7 @@ def test_small_window_scrolls_to_session_controls_and_back_to_desktop_exit(windo
     window.show_all()
     window.resize(660, 560)
     wait_until(lambda: tuple(window.get_size()) == (660, 560))
-    page = window.get_child()
+    page = window.page
     assert isinstance(page, Gtk.ScrolledWindow)
     adjustment = page.get_vadjustment()
     wait_until(lambda: adjustment.get_page_size() > 0 and adjustment.get_upper() > adjustment.get_page_size())
@@ -427,10 +427,10 @@ def test_small_window_scrolls_to_session_controls_and_back_to_desktop_exit(windo
     _x, y = button.translate_coordinates(page, 0, 0)
     assert 0 <= y and y + button.get_allocated_height() <= page.get_allocated_height()
     assert button.get_sensitive()
-    adjustment.set_value(adjustment.get_lower())
-    flush()
-    _x, y = window.back.translate_coordinates(page, 0, 0)
-    assert 0 <= y and y + window.back.get_allocated_height() <= page.get_allocated_height()
+    # Exit controls remain above the scrolling content even at the bottom.
+    _x, y = window.back.translate_coordinates(window, 0, 0)
+    assert 0 <= y and y + window.back.get_allocated_height() <= window.get_allocated_height()
+    assert not window.back.is_ancestor(page)
     assert window.back.get_sensitive()
 
 
@@ -516,3 +516,47 @@ import peppermint.recovery.app
     result = subprocess.run([sys.executable, '-c', code], cwd=Path(__file__).resolve().parents[1],
                             capture_output=True, text=True, timeout=10)
     assert result.returncode == 0, result.stderr
+
+
+def test_return_to_peppermint_launches_window_and_closes_recovery(windows, monkeypatch):
+    launched = []
+    monkeypatch.setattr(app.subprocess, 'Popen', lambda *args, **kwargs: launched.append((args, kwargs)))
+    window = windows()
+    finish(window)
+    window.return_button.clicked()
+    assert launched[0][0][0] == [sys.executable, '-m', 'peppermint.ui.app']
+    assert launched[0][1]['start_new_session']
+    assert window._closed.is_set()
+
+
+def test_failed_return_keeps_desktop_exit_available(windows, monkeypatch):
+    def fail(*args, **kwargs):
+        raise OSError('Launch failed')
+    monkeypatch.setattr(app.subprocess, 'Popen', fail)
+    window = windows()
+    finish(window)
+    window.return_button.clicked()
+    assert not window._closed.is_set()
+    assert 'Launch failed' in window.status.get_text()
+    assert window.back.get_sensitive()
+
+
+def test_recovery_activation_is_windowed_and_raises_existing_window():
+    calls = []
+    class Window:
+        def show_all(self): calls.append('show')
+        def unfullscreen(self): calls.append('windowed')
+        def set_keep_above(self, value): calls.append(('above', value))
+        def present_with_time(self, value): calls.append('present')
+        search = SimpleNamespace(grab_focus=lambda: calls.append('focus'))
+    application = SimpleNamespace(window=Window())
+    app.RecoveryApplication.do_activate(application)
+    assert calls == ['show', 'windowed', ('above', True), 'present', 'focus']
+
+
+def test_recovery_has_native_window_controls(windows):
+    window = windows()
+    finish(window)
+    header = window.get_titlebar()
+    assert header.get_show_close_button()
+    assert header.get_decoration_layout() == ':minimize,maximize,close'

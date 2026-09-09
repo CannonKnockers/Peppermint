@@ -105,9 +105,9 @@ def test_refresh_is_deferred_and_destroy_invalidates_reads(window):
 def test_old_conversation_and_drafts_survive_newest_page_and_menu_navigation(window):
     window._accept_tasks([task()], None)
     row = window.rows[1]
-    row.expanded = True
-    row.update(task())
-    row._chat_entry.set_text('My unfinished follow-up')
+    window.open_task(1)
+    window._accept_detail(task(), None)
+    window.conversation_entry.set_text('My unfinished follow-up')
     window.entry.set_text('My next task')
     window.main_menu.navigation['diagnostics'].clicked()
     window._accept_tasks([task(i) for i in range(40, 80)], None)
@@ -115,7 +115,7 @@ def test_old_conversation_and_drafts_survive_newest_page_and_menu_navigation(win
     window.main_menu.navigation['tasks'].clicked()
     window.main_menu.navigation['conversations'].clicked()
     assert window.rows[1] is row
-    assert row._chat_entry.get_text() == 'My unfinished follow-up'
+    assert window.conversation_entry.get_text() == 'My unfinished follow-up'
     assert window.entry.get_text() == 'My next task'
     assert len(window.rows) == 41
 
@@ -128,7 +128,7 @@ def test_open_older_task_loads_detail_and_switches_view(window):
     assert window.rows[200].expanded
 
 
-def test_manual_and_hide_menu_deactivate_monitoring_without_losing_history(window):
+def test_manual_and_hide_menu_keep_monitoring_enabled_without_losing_history(window):
     window._accept_tasks([task()], None)
     row = window.rows[1]
     window.entry.set_text('Keep this unfinished idea')
@@ -136,19 +136,19 @@ def test_manual_and_hide_menu_deactivate_monitoring_without_losing_history(windo
     window.main_menu.navigation['diagnostics'].clicked()
     assert window.diagnostics.active
     window.main_menu.navigation['manual'].clicked()
-    assert not window.diagnostics.active
+    assert window.diagnostics.active
     window.main_menu.navigation['diagnostics'].clicked()
     assert window.diagnostics.active
     window.main_menu.hide_button.clicked()
     assert not window.get_visible()
-    assert not window.diagnostics.active
+    assert window.diagnostics.active
     assert not window._reader.closed
     window.show_all()
     assert window.diagnostics.active
     assert window.rows[1] is row
     assert window.entry.get_text() == 'Keep this unfinished idea'
     assert window._on_close()
-    assert not window.diagnostics.active
+    assert window.diagnostics.active
 
 
 def test_menu_new_conversation_focuses_existing_draft_without_submitting(window, monkeypatch):
@@ -159,7 +159,7 @@ def test_menu_new_conversation_focuses_existing_draft_without_submitting(window,
     window.main_menu.navigation['manual'].clicked()
     window.menu_button.set_active(True)
     window.main_menu.new_button.clicked()
-    wait_until(lambda: not window.main_menu.get_mapped())
+    assert window.menu_button.get_active()
     assert window.pages.get_visible_child_name() == 'conversations'
     assert window.get_focus() is window.entry
     assert window.entry.get_text() == 'An unfinished idea to review first'
@@ -168,7 +168,7 @@ def test_menu_new_conversation_focuses_existing_draft_without_submitting(window,
 
 def test_menu_refresh_reads_current_overview_and_open_conversations(window):
     window._accept_tasks([task()], None)
-    window.rows[1].expanded = True
+    window.open_task(1)
     window.task_board.filter.set_active_id('waiting')
     window.task_board.search.set_text('printer')
     window._reader.requests.clear()
@@ -201,23 +201,23 @@ def test_escape_dismisses_open_menu_before_hiding_window(window):
     assert not window.get_visible()
 
 
-def test_sidebar_fills_left_edge_without_resizing_content_and_closes_outside(window):
+def test_sidebar_resizes_page_and_keeps_both_usable(window):
     window.show_all()
-    window.resize(660, 560)
-    wait_until(lambda: window.get_mapped() and window.get_size().width == 660)
-    width = window.get_size().width
+    wait_until(lambda: window.get_mapped())
+    width = window.workspace.get_allocated_width()
     window.menu_button.set_active(True)
     wait_until(lambda: window.menu_revealer.get_child_revealed())
-    assert window.get_size().width == width
-    assert window.menu_layer.get_allocation().height == window.overlay.get_allocation().height
-    assert window.menu_revealer.translate_coordinates(window.overlay, 0, 0) == (0, 0)
-    assert not window.workspace.get_sensitive()
-    event = Gdk.Event.new(Gdk.EventType.BUTTON_PRESS)
-    event.button = 1
-    window.menu_shade.emit('button-press-event', event)
-    wait_until(lambda: not window.menu_layer.get_visible())
     assert window.workspace.get_sensitive()
-    assert window.get_visible()
+    assert window.menu_revealer.translate_coordinates(window.overlay, 0, 0) == (0, 0)
+    assert window.workspace.get_allocated_width() < width
+    window.entry.set_text('Can write with sidebar open')
+    window.main_menu.navigation['manual'].clicked()
+    assert window.menu_button.get_active()
+    assert window.manual.search.is_sensitive()
+    window.main_menu.navigation['conversations'].clicked()
+    assert window.entry.get_text() == 'Can write with sidebar open'
+    window.main_menu.close_button.clicked()
+    wait_until(lambda: not window.menu_layer.get_visible())
     window.show_all()
     assert not window.menu_layer.get_visible()
 
@@ -274,3 +274,167 @@ def test_task_counts_use_global_counts_not_page_length(window):
     assert window.task_board.counters['total'].get_text() == '210'
     assert window.task_board.page_label.get_text() == '1–1 of 200'
     assert window.task_board.next.get_sensitive()
+
+
+def test_chat_switch_keeps_one_transcript_and_each_draft(window):
+    window._accept_tasks([task(1), task(2)], None)
+    window.open_task(1)
+    window._accept_detail(task(1, messages=[dict(role='user', content='First')]), None)
+    window.conversation_entry.set_text('Draft one')
+    window.list.select_row(window._sidebar_rows[2])
+    window._accept_detail(task(2, messages=[dict(role='user', content='Second')]), None)
+    window.conversation_entry.set_text('Draft two')
+    window._accept_detail(task(1, messages=[dict(role='user', content='Delayed first')]), None)
+    assert window._active_task_id == 2
+    assert window.conversation_panel.get_children() == [window.rows[2]]
+    assert window.conversation_entry.get_text() == 'Draft two'
+    window.open_task(1)
+    assert window.conversation_entry.get_text() == 'Draft one'
+    assert window.conversation_panel.get_children() == [window.rows[1]]
+    window.new_task()
+    assert window.entry.get_visible()
+    assert not window.conversation_entry.get_visible()
+    assert window.rows[1]._chat_draft == 'Draft one'
+
+
+def test_active_approval_remains_in_transcript_with_followup_disabled(window):
+    pending = dict(id=17, description='Inspect the selected file')
+    data = dict(id=1, idea='Inspect', status='awaiting-confirmation', pending=pending)
+    window.open_task(1)
+    window._accept_detail(data, None)
+    assert not window.conversation_send.get_sensitive()
+    assert window.rows[1].stop_button.get_visible()
+    def descendants(widget):
+        yield widget
+        if isinstance(widget, Gtk.Container):
+            for child in widget.get_children():
+                yield from descendants(child)
+    buttons = [w for w in descendants(window.conversation_panel) if isinstance(w, Gtk.Button)]
+    assert {'Allow once', 'Deny', 'Stop'} <= {w.get_label() for w in buttons}
+
+
+def test_followup_failure_restores_draft(window, monkeypatch):
+    window.open_task(1)
+    window._accept_detail(task(), None)
+    window.conversation_entry.set_text('Keep this')
+    def fail(*_):
+        raise RuntimeError('offline')
+    monkeypatch.setattr(window, 'chat', fail)
+    with pytest.raises(RuntimeError):
+        window._on_active_chat()
+    assert window.rows[1]._chat_draft == 'Keep this'
+
+
+def test_history_is_only_in_sidebar_and_selection_keeps_it_open(window):
+    window._accept_tasks([task(1), task(2)], None)
+    window.show_all()
+    assert window.list.is_ancestor(window.main_menu)
+    assert not window.list.get_mapped()
+    window.menu_button.set_active(True)
+    wait_until(lambda: window.list.get_mapped())
+    window.list.select_row(window._sidebar_rows[2])
+    assert window.menu_button.get_active()
+    assert window.workspace.get_sensitive()
+    assert window._active_task_id == 2
+    assert window.list.get_mapped()
+    assert window.pages.get_visible_child_name() == 'conversations'
+
+
+def test_menu_recovery_stays_in_main_window_and_returns_to_chat(window, monkeypatch):
+    from peppermint.recovery import app as recovery
+    monkeypatch.setattr(recovery.processes, 'list_processes', lambda: [])
+    monkeypatch.setattr(recovery.RecoveryPanel, '_load_session_controls', lambda self: None)
+    window.entry.set_text('Preserve this draft')
+    before = set(Gtk.Window.list_toplevels())
+    window.menu_button.set_active(True)
+    window.main_menu.recovery_button.clicked()
+    assert set(Gtk.Window.list_toplevels()) == before
+    panel = window._recovery_panel
+    assert panel.get_toplevel() is window
+    assert window.pages.get_visible_child_name() == 'recovery'
+    panel.return_button.clicked()
+    assert window.pages.get_visible_child_name() == 'conversations'
+    assert window.entry.get_text() == 'Preserve this draft'
+    window.open_recovery()
+    assert window._recovery_panel is panel
+    window.destroy()
+    assert panel._closed.is_set()
+
+
+def test_chat_composer_masks_password_request_and_resets_on_chat_switch(window):
+    window.open_task(1)
+    window._accept_detail(task(1, messages=[dict(role='assistant', content='Please enter your password.')]), None)
+    assert not window.conversation_entry.get_visibility()
+    window.conversation_entry.set_text('example-secret')
+    window.open_task(2)
+    window._accept_detail(task(2, messages=[dict(role='assistant', content='What application?')]), None)
+    assert window.conversation_entry.get_visibility()
+    window.open_task(1)
+    assert not window.conversation_entry.get_visibility()
+    assert window.conversation_entry.get_text() == 'example-secret'
+
+
+def test_started_diagnostics_collects_off_page_and_hidden_until_paused(window):
+    from tests.test_diagnostics_view import view, sample, flush
+    diagnostics = view()
+    host = PeppermintWindow(None, reader=Reader(), diagnostics=diagnostics)
+    try:
+        host.show_all()
+        assert not diagnostics.monitoring
+        host.navigate('diagnostics')
+        diagnostics.start_button.clicked()
+        monitor = diagnostics._monitor
+        assert diagnostics.monitoring
+        host.navigate('conversations')
+        monitor.callback(sample(0))
+        flush()
+        host.hide()
+        monitor.callback(sample(2))
+        flush()
+        assert diagnostics.monitoring
+        assert len(diagnostics.history) == 2
+        assert monitor.starts == 1 and monitor.stops == 0
+        host.show_all()
+        host.navigate('diagnostics')
+        assert diagnostics.history[-1]['monotonic'] == 1002
+        diagnostics.start_button.clicked()
+        assert not diagnostics.monitoring
+        monitor.callback(sample(4))
+        flush()
+        assert len(diagnostics.history) == 2
+    finally:
+        host.destroy()
+    assert not monitor.running
+
+
+def test_process_tracking_runs_without_graphs_until_report_selected(window, tmp_path):
+    from tests.test_diagnostics_view import view, sample, process, flush
+    from peppermint.diagnostics.tracking import ProcessTracking
+    diagnostics = view()
+    host = PeppermintWindow(None, reader=Reader(), diagnostics=diagnostics)
+    host.tracking = ProcessTracking(tmp_path)
+    try:
+        host.show_all()
+        host.navigate('diagnostics')
+        diagnostics.ingest_sample(sample(processes=[process()]))
+        diagnostics._selected_identity = (12, 900)
+        diagnostics._selected_name = 'fixture-player'
+        diagnostics._refresh_selected_details()
+        diagnostics.track_button.clicked()
+        assert diagnostics.monitoring
+        assert host._reports_view is None
+        rid = next(iter(host.tracking.reports))
+        host.navigate('conversations')
+        diagnostics._monitor.callback(sample(2, processes=[process()]))
+        flush()
+        assert len(host.tracking.reports[rid]['points']) == 1
+        assert host._reports_view is None
+        host._open_tracking_report(rid)
+        assert len(host._reports_view.charts) == 4
+        assert host.pages.get_visible_child_name() == 'tracking'
+        host._reports_view.stop.clicked()
+        assert not host.tracking.reports[rid]['active']
+        assert list(tmp_path.glob('*.json'))
+        assert not host.main_menu.history_expander.get_expanded()
+    finally:
+        host.destroy()

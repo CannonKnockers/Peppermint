@@ -1,4 +1,4 @@
-"""Independent fullscreen recovery window; no daemon, AI, or conversation reads."""
+"""Independent windowed recovery controls; no daemon, AI, or conversation reads."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ import logging
 import os
 from pathlib import Path
 import sys
+import subprocess
 import threading
 
 import gi
@@ -28,14 +29,9 @@ def text(value, style=None):
     return label
 
 
-class RecoveryWindow(Gtk.ApplicationWindow):
-    def __init__(self, app=None, *, list_processes=None, act=None, admin_act=None,
-                 session_capabilities=None, session_request=None):
-        super().__init__(application=app, title='Peppermint Recovery')
-        self.set_default_size(1000, 740)
-        self.set_size_request(660, 560)
-        self.set_keep_above(True)
-        self.get_style_context().add_class('peppermint-window')
+class RecoveryControls:
+    def _init_controls(self, *, list_processes=None, act=None, admin_act=None,
+                       session_capabilities=None, session_request=None):
         self._list = list_processes or processes.list_processes
         self._act = act or processes.act
         self._admin_act = admin_act or admin.act_as_admin
@@ -54,7 +50,6 @@ class RecoveryWindow(Gtk.ApplicationWindow):
         Gtk.StyleContext.add_provider_for_screen(Gdk.Screen.get_default(), provider,
                                                  Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
         self._build()
-        self.connect('key-press-event', self._key)
         self.connect('destroy', lambda *_: self._closed.set())
         self.refresh()
         self._load_session_controls()
@@ -67,13 +62,26 @@ class RecoveryWindow(Gtk.ApplicationWindow):
         page = Gtk.ScrolledWindow()
         page.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
         page.add(content)
-        self.add(page)
-        heading = Gtk.Box(spacing=16)
-        heading.pack_start(text('Peppermint Recovery', 'hero-title'), True, True, 0)
+        layout = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        layout.set_vexpand(True)
+        self.add(layout)
+        heading = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        heading.set_margin_start(24)
+        heading.set_margin_end(24)
+        heading.set_margin_top(16)
+        heading.pack_start(text("Peppermint Recovery", "hero-title"), False, False, 0)
+        exits = Gtk.Box(spacing=12)
+        self.return_button = Gtk.Button(label="Back to Peppermint")
+        self.return_button.get_style_context().add_class("suggested-action")
+        self.return_button.connect("clicked", self._return_to_peppermint)
+        exits.pack_start(self.return_button, False, False, 0)
         self.back = Gtk.Button(label='Return to desktop · Esc')
-        self.back.connect('clicked', lambda *_: self.destroy())
-        heading.pack_end(self.back, False, False, 0)
-        content.pack_start(heading, False, False, 0)
+        self.back.connect('clicked', lambda *_: self._leave())
+        exits.pack_end(self.back, False, False, 0)
+        heading.pack_start(exits, False, False, 0)
+        layout.pack_start(heading, False, False, 0)
+        layout.pack_start(page, True, True, 0)
+        self.page = page
         content.pack_start(text('Ctrl+Alt+Delete · Select a frozen process, request a stop, then force it only if needed.', 'muted'), False, False, 0)
         content.pack_start(text('Runs separately from the main window and AI. The desktop and keyboard service must still respond.', 'muted'), False, False, 0)
 
@@ -184,7 +192,7 @@ class RecoveryWindow(Gtk.ApplicationWindow):
         if action in ('suspend', 'hibernate', 'switch_user', 'lock'):
             titles = {'suspend': 'Suspend this computer?', 'hibernate': 'Hibernate this computer?',
                       'switch_user': 'Switch to the login screen?', 'lock': 'Lock this screen?'}
-            dialog = Gtk.MessageDialog(transient_for=self, modal=True, message_type=Gtk.MessageType.QUESTION,
+            dialog = Gtk.MessageDialog(transient_for=self._surface, modal=True, message_type=Gtk.MessageType.QUESTION,
                                        buttons=Gtk.ButtonsType.CANCEL, text=titles[action])
             dialog.add_button('Continue', Gtk.ResponseType.OK)
             dialog.set_default_response(Gtk.ResponseType.CANCEL)
@@ -194,8 +202,8 @@ class RecoveryWindow(Gtk.ApplicationWindow):
                 return
         # Mint owns the confirmation/inhibitor dialog for logout/restart/poweroff.
         # Yield the screen so it and the desktop's authentication agent can show.
-        self.set_keep_above(False)
-        self.hide()
+        self._keep_above(False)
+        self._surface.hide()
         def operation():
             if self._closed.is_set():
                 return {'status': 'cancelled', 'message': 'Session request cancelled.'}
@@ -207,10 +215,9 @@ class RecoveryWindow(Gtk.ApplicationWindow):
             # A timed-out dispatch may already have opened Mint's dialog.
             # Keep yielding the screen until explicitly reopened by the user.
             if error or result.get('status') not in ('requested', 'unknown'):
-                self.show_all()
-                self.fullscreen()
-                self.set_keep_above(True)
-                self.present()
+                self._surface.show_all()
+                self._keep_above(True)
+                self._surface.present()
             self.session_status.set_text(error or result.get('message', 'No session result returned.'))
         self._work(operation, completed)
 
@@ -297,7 +304,7 @@ class RecoveryWindow(Gtk.ApplicationWindow):
             return
         target = dict(target)
         phrase = 'Force stop' if action == 'kill' else 'Request stop for'
-        dialog = Gtk.MessageDialog(transient_for=self, modal=True, message_type=Gtk.MessageType.WARNING,
+        dialog = Gtk.MessageDialog(transient_for=self._surface, modal=True, message_type=Gtk.MessageType.WARNING,
                                    buttons=Gtk.ButtonsType.CANCEL, text=f"{phrase} {target['name']} (PID {target['pid']})?")
         dialog.format_secondary_text('Unsaved work in this process may be lost. This applies only to the selected process. '
                                      + ('It will be forcibly terminated.' if action == 'kill' else 'It will receive a termination request.'))
@@ -310,7 +317,7 @@ class RecoveryWindow(Gtk.ApplicationWindow):
         self.status.set_text('Waiting for the selected process…' if target['uid'] == os.getuid()
                              else 'Authenticate in Mint’s administrator dialog to continue…')
         if target['uid'] != os.getuid():
-            self.set_keep_above(False)
+            self._keep_above(False)
         def operation():
             if self._closed.is_set():
                 return {'status': 'cancelled', 'message': 'Cancelled before sending a stop.'}
@@ -320,7 +327,7 @@ class RecoveryWindow(Gtk.ApplicationWindow):
         self._work(operation, lambda result, error: self._action_finished(target, action, result, error))
 
     def _action_finished(self, target, action, result, error):
-        self.set_keep_above(True)
+        self._keep_above(True)
         if error:
             self.status.set_text('Stop failed: ' + error)
             return
@@ -339,20 +346,72 @@ class RecoveryWindow(Gtk.ApplicationWindow):
         log.info('Recovery %s pid=%s status=%s', action, target['pid'], result.get('status'))
 
     def _check_admin(self):
-        self.set_keep_above(False)
+        self._keep_above(False)
         self.admin_status.set_text('Authenticate in Mint’s administrator dialog. This check stops no process.')
         def completed(result, error):
-            self.set_keep_above(True)
+            self._keep_above(True)
             ready = not error and result.get('status') == 'ok' and result.get('euid') == 0
             self.admin_status.set_text('Administrator access verified. Each protected action requests authentication.' if ready
                                        else error or result.get('message', 'Administrator check failed.'))
         self._work(lambda: admin.run_helper(['--check'], self._closed.is_set), completed)
 
+    def _return_to_peppermint(self, *_):
+        if self._on_return is not None:
+            self._on_return()
+            return
+        # Launch independently: a frozen main application must not block exit.
+        try:
+            subprocess.Popen([sys.executable, "-m", "peppermint.ui.app"],
+                             start_new_session=True)
+        except OSError as exc:
+            self.status.set_text(f"Could not open Peppermint: {exc}. Use Return to desktop or Esc.")
+            return
+        self._keep_above(False)
+        self.destroy()
+
+    def _keep_above(self, enabled):
+        if self._on_return is None:
+            self._surface.set_keep_above(enabled)
+
+    def _leave(self):
+        if self._on_return is not None:
+            self._on_return()
+        else:
+            self.destroy()
+
     def _key(self, _window, event):
         if event.keyval == Gdk.KEY_Escape:
-            self.destroy()
+            self._leave()
             return True
         return False
+
+
+class RecoveryWindow(RecoveryControls, Gtk.ApplicationWindow):
+    def __init__(self, app=None, **kwargs):
+        Gtk.ApplicationWindow.__init__(self, application=app, title='Peppermint Recovery')
+        self._surface = self
+        self._on_return = None
+        self.set_default_size(940, 820)
+        self.set_position(Gtk.WindowPosition.CENTER)
+        self.set_titlebar(Gtk.HeaderBar(title='Peppermint', subtitle='Recovery',
+                                       show_close_button=True,
+                                       decoration_layout=':minimize,maximize,close'))
+        self.set_size_request(660, 560)
+        self.set_keep_above(True)
+        self.get_style_context().add_class('peppermint-window')
+        self._init_controls(**kwargs)
+        self.connect('key-press-event', self._key)
+
+
+class RecoveryPanel(RecoveryControls, Gtk.Box):
+    """The same controls hosted by the main workspace, with no extra window."""
+    def __init__(self, host, on_return, **kwargs):
+        Gtk.Box.__init__(self, orientation=Gtk.Orientation.VERTICAL)
+        self._surface = host
+        self._on_return = on_return
+        self._init_controls(**kwargs)
+        self.back.set_no_show_all(True)
+        self.back.hide()
 
 
 class RecoveryApplication(Gtk.Application):
@@ -365,7 +424,7 @@ class RecoveryApplication(Gtk.Application):
             self.window = RecoveryWindow(self)
             self.window.connect('destroy', lambda *_: setattr(self, 'window', None))
         self.window.show_all()
-        self.window.fullscreen()
+        self.window.unfullscreen()
         self.window.set_keep_above(True)
         self.window.present_with_time(Gtk.get_current_event_time() or Gdk.CURRENT_TIME)
         self.window.search.grab_focus()

@@ -44,7 +44,8 @@ class MainMenu(Gtk.Box):
         for name, title, icon in PAGES:
             button = self._button(title, icon, lambda page=name: on_navigate(page))
             self.navigation[name] = button
-            content.pack_start(button, False, False, 0)
+            if name != "conversations":
+                content.pack_start(button, False, False, 0)
         if on_recovery:
             self.recovery_button = self._button('Recovery', 'system-run-symbolic', on_recovery)
             self.recovery_button.set_tooltip_text('Recovery and session controls · Ctrl+Alt+Delete')
@@ -56,6 +57,15 @@ class MainMenu(Gtk.Box):
         self.hide_button = self._button('Hide window', 'window-minimize-symbolic', on_hide)
         for button in (self.new_button, self.refresh_button):
             content.pack_start(button, False, False, 0)
+
+        self.history = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        self.history_expander = Gtk.Expander(label="Conversations")
+        self.history_expander.add(self.history)
+        content.pack_start(self.history_expander, False, False, 12)
+        self.reports = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        self.reports_expander = Gtk.Expander(label="Tracking reports")
+        self.reports_expander.add(self.reports)
+        content.pack_start(self.reports_expander, False, False, 6)
 
         self.pack_start(self.hide_button, False, False, 0)
 
@@ -74,7 +84,6 @@ class MainMenu(Gtk.Box):
         row.pack_start(Gtk.Label(label=title, xalign=0), True, True, 0)
         button.add(row)
         def activate(_button):
-            self._on_close()
             callback()
         button.connect('clicked', activate)
         return button

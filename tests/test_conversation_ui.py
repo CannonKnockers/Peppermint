@@ -156,3 +156,16 @@ def test_completed_plan_shows_evidence_scope_without_claiming_verification(scope
     assert '○  Retest the original symptom' in rendered
     assert not any('Verified' in label for label in rendered)
     row.destroy()
+
+
+@pytest.mark.parametrize('prompt', ['Enter your password', 'Sudo Password:', 'Your passphrase?', 'Enter PIN', 'API key?'])
+def test_password_question_masks_entry_and_survives_refresh(prompt):
+    data = dict(id=1, idea='Login', status='awaiting-input', question=prompt)
+    row = TaskRow(data, None)
+    row._answer_entry.set_text('example-secret')
+    assert not row._answer_entry.get_visibility()
+    assert row._answer_entry.get_input_purpose() == Gtk.InputPurpose.PASSWORD
+    row.update(dict(data, error='Please retry'))
+    assert not row._answer_entry.get_visibility()
+    assert row._answer_entry.get_text() == 'example-secret'
+    row.destroy()

@@ -304,17 +304,9 @@ class Database:
         if version == 0:
             # A database made before this table existed may already hold newer
             # columns, because the CREATE statements above are current.
-            confirm_columns = {r["name"] for r in conn.execute("PRAGMA table_info(confirmations)")}
-            task_columns = {r["name"] for r in conn.execute("PRAGMA table_info(tasks)")}
-            undo_columns = {r["name"] for r in conn.execute("PRAGMA table_info(undo)")}
-            if "parent_task_id" in task_columns:
-                version = 4
-            elif "step_id" in undo_columns and "undone" in undo_columns:
-                version = 3
-            elif "token" in confirm_columns:
-                version = 2
-            else:
-                version = 1
+            # Replay idempotent migrations: one newer column does not prove
+            # that all earlier migrations were applied.
+            version = 1
             with conn:
                 conn.execute("DELETE FROM schema_version")
                 conn.execute("INSERT INTO schema_version (version) VALUES (?)", (version,))
@@ -716,9 +708,8 @@ class Database:
 
         return {"resumed": resumed, "halted": halted}
 
-    @staticmethod
-    def _row_to_task(row: sqlite3.Row) -> Task:
-        return Task(
+    def _row_to_task(self, row: sqlite3.Row) -> Task:
+        task = Task(
             id=int(row["id"]),
             idea=row["idea"],
             status=row["status"],
@@ -729,6 +720,9 @@ class Database:
             error=row["error"],
             question=row["question"],
         )
+        from peppermint.common.secrets import history_secrets
+        task._display_secrets = history_secrets(self.get_messages(task.id))
+        return task
 
     def _ensure_task_graph_is_acyclic(self) -> None:
         conn = self.connection()
@@ -762,12 +756,11 @@ class Database:
             "SELECT * FROM steps WHERE task_id = ? ORDER BY id ASC",
             (from_task_id,),
         ).fetchall()
+        self._ensure_task_graph_is_acyclic()
         if not source_steps:
             raise ValueError("Source task has no steps to fork.")
         if from_step_index >= len(source_steps):
             raise ValueError("Fork index must be within the source task's step range.")
-
-        self._ensure_task_graph_is_acyclic()
 
         with conn:
             new_task = conn.execute(

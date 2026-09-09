@@ -78,6 +78,10 @@ Choose one next step:
   A completed inspection or command does not verify a repair. Leave verification
   unfinished unless supported outcome evidence is available. Plan updates do not
   execute computer actions.
+- CPU frequency scaling is not CPU utilization; CPU(s) may count logical threads.
+  Full swap with available RAM does not prove current memory pressure.
+  Before changing swap, inspect active swap and free disk space. Never overwrite
+  active swap. After Text file busy, do not retry with dd or mkswap; stop and explain.
 - For desktop lag, simultaneous video playback and AI, or resource contention,
   start with performance_snapshot. Its measured assessment offers local queued AI,
   truly parallel local AI, and browser AI options. Explain the tradeoffs and the

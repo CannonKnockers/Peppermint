@@ -93,8 +93,9 @@ class Task:
     retest: dict | None = None
 
     def to_dict(self) -> dict:
+        from peppermint.common.secrets import mask
         d = asdict(self)
-        return d
+        return mask(d, getattr(self, "_display_secrets", set()))
 
     def to_json(self) -> str:
         return json.dumps(self.to_dict())

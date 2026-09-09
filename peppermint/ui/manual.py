@@ -42,9 +42,9 @@ MANUAL_SECTIONS = (
         "Use the status filter and Search tasks to find earlier work. "
         "Previous and Next move through results, with the most recently updated first. "
         "Choose Open or Review to read a task's conversation.",
-        "In Conversations, expand a conversation to read messages, its plan, and "
+        "Open the peppermint menu and select a saved conversation in the sidebar to read messages, its plan, and "
         "the Activity log. Expand Output within an activity step to see more detail. "
-        "After a task finishes, use Continue this conversation to send a follow-up.",
+        "After a task finishes, use the message box at the bottom to send a follow-up.",
         "A completed task or checked plan item records progress. Test the original "
         "problem to find out whether it is resolved. Draft replies stay in place "
         "when you switch pages or refresh.",
@@ -70,9 +70,9 @@ MANUAL_SECTIONS = (
         "Choose Every 2 seconds or Every 5 seconds for the sampling interval. "
         "Last 60 seconds and Last 5 minutes change the visible history. Rates need "
         "two readings, so some values take another sample to appear.",
-        "Pause monitoring stops new samples. Leaving Diagnostics or hiding the "
-        "window also pauses collection. Returning resumes it if you previously "
-        "chose Start and have not chosen Pause.",
+        "After Start, monitoring continues when you switch pages or hide the window. "
+        "Return to Diagnostics to see the latest readings and history. Pause monitoring "
+        "stops new samples; quitting Peppermint also stops collection.",
         "History lasts for the current app session. A gap means no usable reading "
         "was recorded; it does not mean resource use was zero. Changing the sampling "
         "interval preserves earlier gaps.",
@@ -93,8 +93,20 @@ MANUAL_SECTIONS = (
         "controls for closing applications are not available in this view. "
         "Press Ctrl+Alt+Delete to open the separate Recovery window for process controls.",
     )),
+    ("Process tracking", (
+        "In Diagnostics, choose Advanced, select a process, then Begin tracking. "
+        "At most three processes can be tracked at once. Tracking starts monitoring "
+        "and continues while you use other pages or hide the window.",
+        "Expand Tracking reports in the sidebar and choose a process to display its graphs. "
+        "CPU, resident memory, and disk read/write rates share the diagnostics sampling interval. "
+        "Graphs are updated only while the report is visible. Missing readings are gaps, not zero usage.",
+        "Each report retains its latest 150 readings. Stop tracking and save report releases a slot. "
+        "Reports are also saved on normal app exit; the latest 20 saved reports are listed next time. "
+        "Pause monitoring pauses tracking samples too. Saved files are in "
+        "~/.local/share/peppermint/tracking-reports/ (or your configured data directory).",
+    )),
     ("Recovery: frozen applications", (
-        "Press Ctrl+Alt+Delete to open Peppermint Recovery fullscreen. "
+        "Press Ctrl+Alt+Delete to open the Peppermint Recovery window above other windows. "
         "The original Linux Mint logout shortcut is moved to Ctrl+Alt+Shift+Delete. "
         "You can also run peppermint recover from a terminal.",
         "Search by process name or PID, select the exact process, and choose Request stop. "
@@ -105,7 +117,8 @@ MANUAL_SECTIONS = (
         "available. It requires a separate confirmation. Refresh processes updates "
         "the snapshot. Core display, session and system processes are protected. "
         "An exited process does not prove the original problem is fixed.",
-        "Recovery runs separately from the main window, background service and AI. "
+        "Recovery from the sidebar stays inside Peppermint. Ctrl+Alt+Delete opens "
+        "an independent recovery window if the main app freezes. "
         "It can help when an application hangs, but Cinnamon's keyboard service, "
         "the display server and the kernel must still respond. It cannot guarantee "
         "screen takeover during a complete desktop or kernel freeze, even with "
@@ -154,7 +167,7 @@ MANUAL_SECTIONS = (
         "The peppermint picture in the top-left corner opens a sidebar that slides "
         "in from the left. "
         "Use it to reach Tasks, Conversations, Diagnostics, and this User manual, "
-        "or to start a New conversation. Choosing a destination closes the sidebar "
+        "or to start a New conversation. Choosing a destination keeps the sidebar open "
         "and opens that page. Click the peppermint picture again, the sidebar's "
         "close button, or the dimmed area outside it, or press Escape to close it. "
         "Use Tab to move between controls and Enter or Space "

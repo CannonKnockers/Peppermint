@@ -5,6 +5,8 @@ from __future__ import annotations
 import os
 import signal
 import subprocess
+import re
+from pathlib import Path
 
 from peppermint import config
 from peppermint.daemon import safety
@@ -49,6 +51,17 @@ def run_shell(cmd: str, purpose: str = "", timeout: int | None = None, ctx: Cont
     verdict = safety.classify_command(cmd)
     if not verdict.safe and not (ctx and ctx.approved):
         return Confirm(description=f"Run: {cmd}", reason=verdict.reason)
+
+    # Active swap must never be reformatted or overwritten, even after approval.
+    if re.search(r'\b(?:fallocate|dd|mkswap|truncate)\b', cmd):
+        try:
+            active = [line.split()[0] for line in Path('/proc/swaps').read_text().splitlines()[1:]]
+        except OSError:
+            raise ToolError('Cannot check active swap. No swap write was attempted.')
+        if any(path in cmd for path in active):
+            raise ToolError('This command targets active swap. No command was run. '
+                            'Do not retry with dd, fallocate or mkswap. Inspect swapon --show and '
+                            'available disk space first; propose a separate new swap file or stop.')
 
     timeout = int(timeout or config.SHELL_TIMEOUT_S)
     timeout = max(1, min(timeout, 300))

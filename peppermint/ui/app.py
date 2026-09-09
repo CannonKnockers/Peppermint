@@ -47,6 +47,12 @@ class PeppermintApp(Gtk.Application):
         except Exception:
             log.exception("Peppermint could not make the panel icon.")
 
+    def do_shutdown(self) -> None:
+        if self.window is not None:
+            self.window.destroy()
+            self.window = None
+        Gtk.Application.do_shutdown(self)
+
     def do_activate(self) -> None:
         # The panel icon keeps Peppermint alive when no window is open.
         self.hold()
@@ -84,7 +90,8 @@ class PeppermintApp(Gtk.Application):
         window.present_with_time(Gtk.get_current_event_time() or GLib.get_monotonic_time() // 1000)
         page = window.pages.get_visible_child_name()
         if page == "conversations":
-            window.entry.grab_focus()
+            entry = window.entry if window._active_task_id is None else window.conversation_entry
+            entry.grab_focus()
         elif page == "tasks":
             window.task_board.search.grab_focus()
         elif page == "diagnostics":
