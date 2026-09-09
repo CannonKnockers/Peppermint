@@ -59,6 +59,9 @@ class Daemon:
         self.connection: Gio.DBusConnection | None = None
         self.registration_id = 0
         self.worker = threading.Thread(target=self._work, name="peppermint-agent", daemon=True)
+        # Archive I/O is independent of model work and never runs on the bus loop.
+        # Reject a second operation instead of accumulating threads or large jobs.
+        self._archive_lock = threading.Lock()
 
     # --- start and stop ----------------------------------------------------
 
@@ -131,6 +134,9 @@ class Daemon:
         )
 
     def _on_method(self, connection, sender, path, iface, method, params, invocation):
+        if method in ("ExportTask", "ExportAll", "ImportArchive"):
+            self._start_archive(method, params.unpack(), invocation)
+            return
         try:
             result = self._dispatch(method, params.unpack())
         except Exception as exc:
@@ -138,6 +144,42 @@ class Daemon:
             invocation.return_dbus_error("org.peppermint.Error", f"{type(exc).__name__}: {exc}")
             return
         invocation.return_value(result)
+
+    def _start_archive(self, method: str, args: tuple, invocation) -> None:
+        if not self._archive_lock.acquire(blocking=False):
+            invocation.return_dbus_error(
+                "org.peppermint.Error.Busy",
+                "Another export or import is in progress. Try again when it finishes.",
+            )
+            return
+        try:
+            threading.Thread(
+                target=self._run_archive, args=(method, args, invocation),
+                name="peppermint-archive", daemon=True,
+            ).start()
+        except Exception as exc:
+            self._archive_lock.release()
+            invocation.return_dbus_error("org.peppermint.Error", f"Cannot start archive operation: {exc}")
+
+    def _run_archive(self, method: str, args: tuple, invocation) -> None:
+        result, error = None, None
+        try:
+            result = self._dispatch(method, args)
+        except Exception as exc:
+            log.exception("The method %s failed", method)
+            error = f"{type(exc).__name__}: {exc}"
+
+        def finish():
+            try:
+                if error is not None:
+                    invocation.return_dbus_error("org.peppermint.Error", error)
+                else:
+                    invocation.return_value(result)
+            finally:
+                self._archive_lock.release()
+            return GLib.SOURCE_REMOVE
+
+        GLib.idle_add(finish)
 
     def _dispatch(self, method: str, args: tuple):
         if method == "AddTask":
@@ -159,6 +201,28 @@ class Daemon:
         if method == "GetTask":
             task = self.db.get_task(args[0])
             return GLib.Variant("(s)", (task.to_json() if task else "null",))
+
+        if method in ("ExportTask", "ExportAll"):
+            from peppermint.daemon.archive import export_archive
+            task_id = args[0] if method == "ExportTask" else None
+            if task_id is not None and (type(task_id) is not int or not 1 <= task_id <= 2_147_483_647):
+                raise ValueError("Task ID must be between 1 and 2147483647.")
+            path = export_archive(self.db, task_id, model=self.llm.model)
+            return GLib.Variant("(s)", (str(path),))
+
+        if method == "ImportArchive":
+            from peppermint.daemon.archive import import_archive
+            outcome = import_archive(self.db, args[0], model=self.llm.model)
+            for task_id in outcome["task_ids"]:
+                try:
+                    task = self.db.get_task(task_id, with_steps=False)
+                    if task is not None:
+                        self._emit_update(task_id, task.status)
+                except Exception:
+                    # History is already committed. A failed refresh must not make
+                    # the caller retry and unintentionally import another copy.
+                    log.exception("Cannot notify the window about imported task %s", task_id)
+            return GLib.Variant("(s)", (json.dumps(outcome),))
 
         if method == "ConfirmAction":
             task_id, confirmation_id, approved = int(args[0]), int(args[1]), bool(args[2])

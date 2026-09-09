@@ -6,6 +6,14 @@ set -euo pipefail
 PREFIX="$HOME/.local/ollama"
 DIST="$HOME/.local/share/ollama-dist"
 MODEL="${PEPPERMINT_MODEL:-qwen3:8b}"
+case "${MODEL,,}" in
+  spark)
+    MODEL="${PEPPERMINT_MODEL_SPARK:-qwen2.5:1.5b-instruct}"
+    ;;
+  astra)
+    MODEL="${PEPPERMINT_MODEL_ASTRA:-qwen3:8b}"
+    ;;
+esac
 UNIT="$HOME/.config/systemd/user/ollama.service"
 
 say() { printf '\n\033[1m%s\033[0m\n' "$*"; }

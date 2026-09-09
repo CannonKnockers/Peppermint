@@ -9,6 +9,8 @@
     peppermint chat 3 "now do the same for Documents"
     peppermint watch                          follow the tasks live
     peppermint health                         check the daemon and the model
+    peppermint export 3 / peppermint export --all
+    peppermint import tasks.peppermint         restore task history with new IDs
     peppermint toggle                         open or hide the window
 """
 
@@ -16,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from pathlib import Path
 import sys
 
 import gi
@@ -154,6 +157,57 @@ def cmd_health(args) -> int:
     return 0 if data["ok"] else 1
 
 
+def cmd_export(args) -> int:
+    """Print the path of the archive created by the daemon."""
+    method = "ExportAll" if args.all else "ExportTask"
+    params = None if args.all else GLib.Variant("(i)", (args.task_id,))
+    result = dbus_api.call_daemon(method, params, GLib.VariantType("(s)"))
+    print(result.unpack()[0])
+    return 0
+
+
+def cmd_import(args) -> int:
+    """Resolve the caller's path before sending it to the background daemon."""
+    try:
+        path = Path(args.file).expanduser().resolve(strict=True)
+        if not path.is_file():
+            raise ValueError("The archive path must point to a file.")
+    except (OSError, RuntimeError, ValueError) as exc:
+        print(f"Peppermint cannot open the archive: {exc}", file=sys.stderr)
+        return 1
+    result = dbus_api.call_daemon(
+        "ImportArchive", GLib.Variant("(s)", (str(path),)), GLib.VariantType("(s)"),
+    )
+    try:
+        outcome = json.loads(result.unpack()[0])
+        task_ids, warnings = outcome["task_ids"], outcome["warnings"]
+        if (not isinstance(task_ids, list) or not isinstance(warnings, list)
+                or any(type(task_id) is not int or task_id <= 0 for task_id in task_ids)
+                or any(not isinstance(warning, str) for warning in warnings)):
+            raise ValueError("Invalid import result")
+    except (ValueError, TypeError, KeyError) as exc:
+        print("Peppermint received an invalid import result. Check the task list before retrying.",
+              file=sys.stderr)
+        return 1
+    for warning in warnings:
+        print(f"Warning: {warning}", file=sys.stderr)
+    if task_ids:
+        print("Imported tasks: " + ", ".join(str(task_id) for task_id in task_ids))
+    else:
+        print("The archive contained no tasks.")
+    return 0
+
+
+def _positive_task_id(value: str) -> int:
+    try:
+        task_id = int(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError("task ID must be a positive integer") from None
+    if not 1 <= task_id <= 2_147_483_647:
+        raise argparse.ArgumentTypeError("task ID must be between 1 and 2147483647")
+    return task_id
+
+
 def cmd_undo(args) -> int:
     if args.apply or args.task:
         result = dbus_api.call_daemon(
@@ -284,6 +338,16 @@ def build_parser() -> argparse.ArgumentParser:
     p = subs.add_parser("health", help="check the daemon and the model")
     p.set_defaults(func=cmd_health)
 
+    p = subs.add_parser("export", help="save a task or all tasks in a .peppermint ZIP archive")
+    selection = p.add_mutually_exclusive_group(required=True)
+    selection.add_argument("task_id", nargs="?", type=_positive_task_id, help="task ID to export")
+    selection.add_argument("--all", action="store_true", help="export every task")
+    p.set_defaults(func=cmd_export)
+
+    p = subs.add_parser("import", help="restore a .peppermint archive with new task IDs")
+    p.add_argument("file", help="path to the .peppermint archive")
+    p.set_defaults(func=cmd_import)
+
     p = subs.add_parser("undo", help="list or put back the changes Peppermint made")
     p.add_argument("-n", "--limit", type=int, default=20)
     p.add_argument("--apply", action="store_true", help="put the change back")
@@ -306,7 +370,7 @@ def main(argv: list[str] | None = None) -> int:
 
     # `peppermint "an idea"` is the same as `peppermint add "an idea"`.
     known = {"add", "list", "show", "allow", "deny", "answer", "retest", "chat",
-             "cancel", "watch", "health", "undo", "toggle", "recover", "-h", "--help"}
+             "cancel", "watch", "health", "export", "import", "undo", "toggle", "recover", "-h", "--help"}
     if argv and argv[0] not in known:
         argv.insert(0, "add")
 

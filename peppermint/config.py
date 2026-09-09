@@ -4,6 +4,11 @@ Environment variables with the PEPPERMINT_ prefix override the defaults, so you 
 try a different model without editing code:
 
     PEPPERMINT_MODEL=qwen2.5:7b-instruct-q4_K_M peppermint-daemon
+
+To save usage during experimentation, you can also use:
+
+    PEPPERMINT_MODEL=spark
+    PEPPERMINT_MODEL_SPARK=qwen2.5:1.5b-instruct
 """
 
 from __future__ import annotations
@@ -32,10 +37,25 @@ def _env_float(name: str, default: float) -> float:
         return default
 
 
+def _resolve_model_alias(value: str, fallback: str) -> str:
+    model = (value or "").strip()
+    if not model:
+        return fallback
+    lowered = model.lower()
+    if lowered == "spark":
+        return _env("MODEL_SPARK", "qwen2.5:1.5b-instruct")
+    if lowered == "astra":
+        return _env("MODEL_ASTRA", "qwen3:8b")
+    return model
+
+
 # --- Model -----------------------------------------------------------------
 
-MODEL = _env("MODEL", "qwen3:8b")
-FALLBACK_MODEL = _env("FALLBACK_MODEL", "qwen2.5:7b-instruct-q4_K_M")
+MODEL = _resolve_model_alias(_env("MODEL", "qwen3:8b"), _env("MODEL_ASTRA", "qwen3:8b"))
+FALLBACK_MODEL = _resolve_model_alias(
+    _env("FALLBACK_MODEL", "qwen2.5:7b-instruct-q4_K_M"),
+    _env("MODEL_SPARK", "qwen2.5:1.5b-instruct"),
+)
 OLLAMA_HOST = _env("OLLAMA_HOST", "http://127.0.0.1:11434")
 
 NUM_CTX = _env_int("NUM_CTX", 16384)

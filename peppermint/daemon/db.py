@@ -9,6 +9,8 @@ from __future__ import annotations
 import json
 import sqlite3
 import threading
+from contextlib import contextmanager
+from copy import deepcopy
 from datetime import datetime, timezone
 
 from peppermint import config
@@ -114,6 +116,159 @@ MIGRATIONS: dict[int, list[str]] = {
 
 def now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+@contextmanager
+def _archive_transaction(conn):
+    """Give an archive operation its own rollback boundary, including in a caller transaction."""
+    conn.execute("SAVEPOINT peppermint_archive")
+    try:
+        yield
+    except BaseException:
+        conn.execute("ROLLBACK TO peppermint_archive")
+        conn.execute("RELEASE peppermint_archive")
+        raise
+    else:
+        conn.execute("RELEASE peppermint_archive")
+
+
+_ARCHIVE_FIELDS = {
+    "tasks": {
+        "idea": str, "status": str, "created_at": str, "updated_at": str,
+        "result": (str, ""), "error": (str, ""), "question": (str, ""),
+        "policy_version": (int, 0),
+    },
+    "steps": {
+        "tool": str, "args": dict, "ts": str, "risk": (str, "safe"),
+        "output": (str, ""), "status": (str, "ok"), "started_at": (str, ""),
+        "mutating": (int, 0),
+    },
+    "messages": {"role": str, "content": str, "ts": str},
+    "confirmations": {
+        "description": str, "ts": str, "step_id": (int, 0), "reason": (str, ""),
+        "resolved": (int, 0), "approved": (int, 0), "token": (str, ""),
+        "expires_at": (str, ""), "fingerprint": (str, ""),
+    },
+    "undo": {
+        "kind": str, "target": str, "ts": str, "old_value": (str, ""),
+        "undone": (int, 0), "step_id": (int, 0),
+    },
+    "task_runs": {"calls_used": int, "step_start": int},
+}
+_ARCHIVE_CHILDREN = {"steps": "steps", "conversations": "messages",
+                     "approvals": "confirmations", "undo": "undo"}
+_SQLITE_MAX_ID = 2**63 - 1
+
+
+def _archive_integer(value, label, minimum=0):
+    if type(value) is not int or not minimum <= value <= _SQLITE_MAX_ID:
+        raise ValueError(f"{label} must be an integer from {minimum} to {_SQLITE_MAX_ID}.")
+    return value
+
+
+def _archive_row(row, table, task_id=None):
+    if not isinstance(row, dict):
+        raise ValueError(f"Archived {table} row must be an object.")
+    result = {}
+    if table != "task_runs":
+        result["id"] = _archive_integer(row.get("id"), f"{table}.id", 1)
+    if task_id is not None:
+        result["task_id"] = _archive_integer(row.get("task_id"), f"{table}.task_id", 1)
+        if result["task_id"] != task_id:
+            raise ValueError(f"Archived {table} row belongs to another task.")
+    for key, spec in _ARCHIVE_FIELDS[table].items():
+        kind, value = (spec[0], row.get(key, spec[1])) if isinstance(spec, tuple) else (spec, row.get(key))
+        if kind is int:
+            value = _archive_integer(value, f"{table}.{key}")
+        elif not isinstance(value, kind):
+            raise ValueError(f"Archived {table}.{key} must be {kind.__name__}.")
+        if key in ("mutating", "resolved", "approved", "undone") and value not in (0, 1):
+            raise ValueError(f"Archived {table}.{key} must be 0 or 1.")
+        result[key] = deepcopy(value)
+    return result
+
+
+def _archive_reference(value, step_ids, label):
+    value = _archive_integer(value, label)
+    if value and value not in step_ids:
+        raise ValueError(f"Archived {label} refers to a missing step in its task.")
+    return value
+
+
+def _archive_tasks(tasks):
+    """Validate relational data before it can be inserted into the live database."""
+    if not isinstance(tasks, list):
+        raise ValueError("Archived tasks must be an array.")
+    seen = {table: set() for table in ("tasks", *_ARCHIVE_CHILDREN.values())}
+    normalized = []
+    for source in tasks:
+        task = _archive_row(source, "tasks")
+        task_id = task["id"]
+        if task_id in seen["tasks"]:
+            raise ValueError("Archived task IDs must be unique.")
+        seen["tasks"].add(task_id)
+        try:
+            Status(task["status"])
+        except ValueError as exc:
+            raise ValueError("Archived task has an unknown status.") from exc
+        for name, table in _ARCHIVE_CHILDREN.items():
+            rows = source.get(name, [] if name == "undo" else None)
+            if not isinstance(rows, list):
+                raise ValueError(f"Archived {name} must be an array.")
+            task[name] = []
+            for row in rows:
+                row = _archive_row(row, table, task_id)
+                if row["id"] in seen[table]:
+                    raise ValueError(f"Archived {table} IDs must be unique.")
+                seen[table].add(row["id"])
+                task[name].append(row)
+            task[name].sort(key=lambda row: row["id"])
+        step_ids = {row["id"] for row in task["steps"]}
+        for name in ("approvals", "undo"):
+            for row in task[name]:
+                _archive_reference(row["step_id"], step_ids, name + ".step_id")
+        task["plan"] = deepcopy(source.get("plan", []))
+        if not isinstance(task["plan"], list) or any(not isinstance(row, dict) for row in task["plan"]):
+            raise ValueError("Archived plan must be an array of objects.")
+        for row in task["plan"]:
+            if "evidence_step_id" in row:
+                _archive_reference(row["evidence_step_id"], step_ids, "plan.evidence_step_id")
+        task["run"] = None
+        if source.get("run") is not None:
+            task["run"] = _archive_row(source["run"], "task_runs", task_id)
+            _archive_reference(task["run"]["step_start"], step_ids, "run.step_start")
+        # Reject non-JSON arguments, plans, and non-finite numbers before any writes.
+        try:
+            json.dumps(task, allow_nan=False)
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise ValueError("Archived task history must contain valid JSON values.") from exc
+        normalized.append(task)
+    return normalized, seen
+
+
+def _remap_history_ids(value, step_ids):
+    """Update known structured evidence fields, never arbitrary prose or numeric tool arguments."""
+    if isinstance(value, list):
+        return [_remap_history_ids(item, step_ids) for item in value]
+    if not isinstance(value, dict):
+        return value
+    return {key: step_ids.get(item, item) if key == "evidence_step_id" and type(item) is int
+            else _remap_history_ids(item, step_ids) for key, item in value.items()}
+
+
+def _remap_retest_message(content, step_ids):
+    try:
+        message = json.loads(content)
+        if not isinstance(message, dict) or message.get("name") != "request_retest":
+            return content
+        receipt = json.loads(message["content"])
+        remapped = _remap_history_ids(receipt, step_ids)
+        if remapped == receipt:
+            return content
+        message["content"] = json.dumps(remapped, ensure_ascii=False)
+        return json.dumps(message, ensure_ascii=False)
+    except (ValueError, TypeError, KeyError):
+        return content
 
 
 class Database:
@@ -229,6 +384,197 @@ class Database:
             if task.status == Status.AWAITING_INPUT.value:
                 task.retest = pending_retest(task.steps, task.plan)
         return task
+
+    def export_tasks_with_history(self, task_ids: list[int] | None = None) -> list[dict]:
+        """Export one or more tasks with all history needed to restore them."""
+        if task_ids is not None:
+            if not isinstance(task_ids, list):
+                raise ValueError("task_ids must be a list of integers.")
+            if not all(isinstance(task_id, int) and task_id > 0 for task_id in task_ids):
+                raise ValueError("task IDs must be positive integers.")
+        conn = self.connection()
+        if task_ids is None:
+            rows = conn.execute("SELECT * FROM tasks ORDER BY id ASC").fetchall()
+        else:
+            if not task_ids:
+                return []
+            placeholders = ",".join("?" for _ in task_ids)
+            rows = conn.execute(
+                f"SELECT * FROM tasks WHERE id IN ({placeholders}) ORDER BY id ASC",
+                tuple(task_ids),
+            ).fetchall()
+
+        tasks = []
+        for row in rows:
+            task_id = int(row["id"])
+            tasks.append(self._task_with_history(conn, task_id, row))
+        return tasks
+
+    @staticmethod
+    def _task_with_history(conn, task_id: int, row: sqlite3.Row) -> dict:
+        # Keep a row-oriented snapshot and include every history table that should
+        # move with the task.
+        conversations = [
+            dict(message) for message in conn.execute(
+                "SELECT * FROM messages WHERE task_id = ? ORDER BY id ASC", (task_id,)
+            ).fetchall()
+        ]
+        steps = [
+            dict(step) for step in conn.execute(
+                "SELECT * FROM steps WHERE task_id = ? ORDER BY id ASC", (task_id,)
+            ).fetchall()
+        ]
+        approvals = [
+            dict(approval) for approval in conn.execute(
+                "SELECT * FROM confirmations WHERE task_id = ? ORDER BY id ASC", (task_id,)
+            ).fetchall()
+        ]
+        undo = [
+            dict(entry) for entry in conn.execute(
+                "SELECT * FROM undo WHERE task_id = ? ORDER BY id ASC", (task_id,)
+            ).fetchall()
+        ]
+        run_row = conn.execute(
+            "SELECT calls_used, step_start FROM task_runs WHERE task_id = ?",
+            (task_id,),
+        ).fetchone()
+        plan_row = conn.execute(
+            "SELECT steps FROM task_plans WHERE task_id = ?",
+            (task_id,),
+        ).fetchone()
+
+        try:
+            plan = json.loads(plan_row["steps"]) if plan_row else []
+        except (TypeError, ValueError):
+            plan = []
+
+        task = {
+            "id": int(row["id"]),
+            "idea": row["idea"],
+            "status": row["status"],
+            "created_at": row["created_at"],
+            "updated_at": row["updated_at"],
+            "result": row["result"],
+            "error": row["error"],
+            "question": row["question"],
+            "policy_version": int(row["policy_version"]),
+            "steps": steps,
+            "conversations": conversations,
+            "approvals": approvals,
+            "undo": undo,
+            "run": None if run_row is None else {
+                "task_id": task_id,
+                "calls_used": int(run_row["calls_used"]),
+                "step_start": int(run_row["step_start"]),
+            },
+            "plan": plan,
+        }
+        return task
+
+    def import_task_from_portable(self, source: dict) -> int:
+        """Insert one exported task and return the new task id."""
+        validated, _ = _archive_tasks([source])
+        task = validated[0]
+        conn = self.connection()
+        with conn:
+            with _archive_transaction(conn):
+                return self._insert_portable_task(conn, task)
+
+    @staticmethod
+    def _insert_portable_task(conn: sqlite3.Connection, task: dict) -> int:
+        cur = conn.execute(
+            "INSERT INTO tasks (idea, status, created_at, updated_at, result, error, question, policy_version) "
+            "VALUES (?,?,?,?,?,?,?,?)",
+            (
+                task["idea"],
+                task["status"],
+                task["created_at"],
+                task["updated_at"],
+                task["result"],
+                task["error"],
+                task["question"],
+                int(task["policy_version"]),
+            ),
+        )
+        new_task_id = int(cur.lastrowid)
+
+        step_id_map: dict[int, int] = {}
+        for step in task["steps"]:
+            raw = json.dumps(step["args"], allow_nan=False)
+            cur = conn.execute(
+                "INSERT INTO steps (task_id, tool, args, risk, output, status, ts, started_at, mutating)"
+                " VALUES (?,?,?,?,?,?,?,?,?)",
+                (
+                    new_task_id,
+                    step["tool"],
+                    raw,
+                    step["risk"],
+                    step["output"],
+                    step["status"],
+                    step["ts"],
+                    step["started_at"],
+                    int(step["mutating"]),
+                ),
+            )
+            step_id_map[int(step["id"])] = int(cur.lastrowid)
+
+        for message in task["conversations"]:
+            content = _remap_retest_message(message["content"], step_id_map)
+            conn.execute(
+                "INSERT INTO messages (task_id, role, content, ts) VALUES (?,?,?,?)",
+                (new_task_id, message["role"], content, message["ts"]),
+            )
+
+        for approval in task["approvals"]:
+            conn.execute(
+                "INSERT INTO confirmations (task_id, step_id, description, reason, resolved, approved,"
+                " ts, token, expires_at, fingerprint) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                (
+                    new_task_id,
+                    step_id_map.get(int(approval["step_id"]), int(approval["step_id"])),
+                    approval["description"],
+                    approval["reason"],
+                    int(approval["resolved"]),
+                    int(approval["approved"]),
+                    approval["ts"],
+                    approval["token"],
+                    approval["expires_at"],
+                    approval["fingerprint"],
+                ),
+            )
+
+        for record in task["undo"]:
+            conn.execute(
+                "INSERT INTO undo (task_id, kind, target, old_value, ts, undone, step_id) "
+                "VALUES (?,?,?,?,?,?,?)",
+                (
+                    new_task_id,
+                    record["kind"],
+                    record["target"],
+                    record["old_value"],
+                    record["ts"],
+                    int(record["undone"]),
+                    step_id_map.get(int(record["step_id"]), int(record["step_id"])),
+                ),
+            )
+
+        if task["run"] is not None:
+            conn.execute(
+                "INSERT INTO task_runs (task_id, calls_used, step_start) "
+                "VALUES (?,?,?)",
+                (
+                    new_task_id,
+                    int(task["run"]["calls_used"]),
+                    step_id_map.get(int(task["run"]["step_start"]), int(task["run"]["step_start"])),
+                ),
+            )
+
+        remapped_plan = [_remap_history_ids(step, step_id_map) for step in task["plan"]]
+        conn.execute(
+            "INSERT INTO task_plans (task_id, steps) VALUES (?, ?)",
+            (new_task_id, json.dumps(remapped_plan)),
+        )
+        return new_task_id
 
     def list_tasks(self, limit: int = 50) -> list[Task]:
         conn = self.connection()

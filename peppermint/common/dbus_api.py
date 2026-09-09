@@ -36,6 +36,17 @@ DAEMON_XML = """
       <arg type="i" name="id" direction="in"/>
       <arg type="s" name="json" direction="out"/>
     </method>
+    <method name="ExportTask">
+      <arg type="i" name="task_id" direction="in"/>
+      <arg type="s" name="archive_path" direction="out"/>
+    </method>
+    <method name="ExportAll">
+      <arg type="s" name="archive_path" direction="out"/>
+    </method>
+    <method name="ImportArchive">
+      <arg type="s" name="archive_path" direction="in"/>
+      <arg type="s" name="json" direction="out"/>
+    </method>
     <method name="Confirm">
       <arg type="i" name="id" direction="in"/>
       <arg type="b" name="approved" direction="in"/>
