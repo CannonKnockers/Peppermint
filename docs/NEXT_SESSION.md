@@ -1,3 +1,22 @@
+# Current handoff — recurring tasks
+
+Updated 2026-09-09. Read [RECURRING_TASKS.md](RECURRING_TASKS.md) first. It records
+what changed, exact commands, tests, runtime state and the remaining issue in
+plain language for the next Spark session.
+
+Recurring schedules are implemented and the daemon is loaded. All 45 feature
+tests pass. Full suite: 1470 passed, one pre-existing overview/password-masking
+test conflict. No live schedules were installed. The user requested a local commit;
+check `git log -1` for its ID. No push was requested.
+Preserve the pre-existing archive.py edit. Next separate fix: reconcile overview
+query efficiency with password masking, then rerun the full suite before calling
+this a fully green commit checkpoint.
+
+The older checkpoint below is historical; do not use its PIDs, test counts or
+publication instructions as current state.
+
+---
+
 # Compact handoff — GitHub commit baseline
 
 Updated 2026-09-08, 21:24 America/Chicago.

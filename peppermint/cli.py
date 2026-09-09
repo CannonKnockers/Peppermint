@@ -11,6 +11,8 @@
     peppermint health                         check the daemon and the model
     peppermint export 3 / peppermint export --all
     peppermint import tasks.peppermint         restore task history with new IDs
+    peppermint schedule add 3 "daily at 3pm"  repeat a task in local time
+    peppermint schedule list | pause 3 | resume 3 | remove 3
     peppermint toggle                         open or hide the window
     peppermint plugin list | enable <name> | disable <name>
 """
@@ -170,7 +172,7 @@ def cmd_export(args) -> int:
 def cmd_fork(args) -> int:
     result = dbus_api.call_daemon(
         "ForkTask",
-        GLib.Variant("(iis)", (args.task_id, args.at_step, " ".join(args.idea))),
+        GLib.Variant("(iis)", (args.task_id, args.at, " ".join(args.idea))),
         GLib.VariantType("(i)"),
     )
     task_id = result.unpack()[0]
@@ -319,6 +321,37 @@ def cmd_recover(args) -> int:
     return 0
 
 
+def cmd_schedule(args) -> int:
+    if args.action == "list":
+        result = dbus_api.call_daemon("ListSchedules", reply_type=GLib.VariantType("(s)"))
+        schedules = json.loads(result.unpack()[0])
+        if not schedules:
+            print("No recurring tasks.")
+        for row in schedules:
+            state = "enabled" if row["enabled"] else "paused"
+            print(f"[{row['task_id']}] {row['schedule_text']} · {state} · {row['backend']}")
+        return 0
+    if args.action == "add":
+        result = dbus_api.call_daemon("CreateSchedule", GLib.Variant("(is)", (args.task_id, args.schedule)),
+                                     GLib.VariantType("(s)"))
+        row = json.loads(result.unpack()[0])
+        print(f"Task {args.task_id}: {row['schedule_text']} ({row['backend']}, local time).")
+        if row.get("warning"):
+            print("Warning: " + row["warning"], file=sys.stderr)
+        return 0
+    method = {"pause": "PauseSchedule", "resume": "ResumeSchedule", "remove": "RemoveSchedule"}[args.action]
+    dbus_api.call_daemon(method, GLib.Variant("(i)", (args.task_id,)))
+    print(f"Task {args.task_id}: schedule { {'pause': 'paused', 'resume': 'resumed', 'remove': 'removed'}[args.action]}.")
+    return 0
+
+
+def cmd_run_scheduled(args) -> int:
+    result = dbus_api.call_daemon("RunScheduled", GLib.Variant("(i)", (args.task_id,)), GLib.VariantType("(i)"))
+    run_id = result.unpack()[0]
+    print(f"Queued scheduled task {run_id}." if run_id else "Skipped: schedule inactive or a previous task is unfinished.")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="peppermint", description="Peppermint, your helper on Linux Mint.")
     subs = parser.add_subparsers(dest="command")
@@ -385,6 +418,20 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("idea", nargs="+")
     p.set_defaults(func=cmd_fork)
 
+    p = subs.add_parser("schedule", help="manage recurring tasks (local time)")
+    actions = p.add_subparsers(dest="action", required=True)
+    for action in ("list", "add", "pause", "resume", "remove"):
+        sub = actions.add_parser(action)
+        if action != "list":
+            sub.add_argument("task_id", type=_positive_task_id)
+        if action == "add":
+            sub.add_argument("schedule", help='for example "every Monday" or "daily at 3pm"')
+        sub.set_defaults(func=cmd_schedule)
+
+    p = subs.add_parser("run-scheduled", help="enqueue one occurrence of an enabled schedule")
+    p.add_argument("task_id", type=_positive_task_id)
+    p.set_defaults(func=cmd_run_scheduled)
+
     p = subs.add_parser("plugin", help="show, enable, and disable plugins")
     plugin_actions = p.add_subparsers(dest="action", required=True)
 
@@ -422,7 +469,7 @@ def main(argv: list[str] | None = None) -> int:
     # `peppermint "an idea"` is the same as `peppermint add "an idea"`.
     known = {"add", "list", "show", "allow", "deny", "answer", "retest", "chat",
              "cancel", "watch", "health", "export", "import", "fork", "undo",
-             "toggle", "recover", "plugin", "-h", "--help"}
+             "toggle", "recover", "plugin", "schedule", "run-scheduled", "-h", "--help"}
     if argv and argv[0] not in known:
         argv.insert(0, "add")
 

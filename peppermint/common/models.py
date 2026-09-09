@@ -91,6 +91,7 @@ class Task:
     messages: list[dict] = field(default_factory=list)
     plan: list[dict] = field(default_factory=list)
     retest: dict | None = None
+    schedule: dict | None = None
 
     def to_dict(self) -> dict:
         from peppermint.common.secrets import mask

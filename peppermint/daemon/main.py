@@ -25,6 +25,7 @@ from peppermint.common.models import Status  # noqa: E402
 from peppermint.daemon import notifier, undo  # noqa: E402
 from peppermint.daemon.agent import Agent  # noqa: E402
 from peppermint.daemon.db import Database  # noqa: E402
+from peppermint.daemon.scheduler import Scheduler
 from peppermint.daemon.plugins import PluginManager  # noqa: E402
 from peppermint.daemon.llm import LLM, LLMError  # noqa: E402
 
@@ -53,6 +54,8 @@ class Job:
 class Daemon:
     def __init__(self):
         self.db = Database()
+        self.scheduler = Scheduler(self.db, notify=lambda message: notifier.send("Peppermint schedules", message))
+        self._schedule_lock = threading.Lock()
         self.llm = LLM()
         self.plugins = PluginManager()
         self.plugins.load_plugins()
@@ -137,6 +140,9 @@ class Daemon:
         )
 
     def _on_method(self, connection, sender, path, iface, method, params, invocation):
+        if method in ("CreateSchedule", "PauseSchedule", "ResumeSchedule", "RemoveSchedule", "RunScheduled"):
+            self._start_schedule(method, params.unpack(), invocation)
+            return
         if method in ("ExportTask", "ExportAll", "ImportArchive"):
             self._start_archive(method, params.unpack(), invocation)
             return
@@ -184,7 +190,62 @@ class Daemon:
 
         GLib.idle_add(finish)
 
+    def _start_schedule(self, method, args, invocation):
+        # systemctl/crontab may take seconds. Keep the bus and model responsive.
+        if not self._schedule_lock.acquire(blocking=False):
+            invocation.return_dbus_error("org.peppermint.Error.Busy", "Another schedule operation is in progress. Try again.")
+            return
+
+        def work():
+            result, error = None, None
+            try:
+                result = self._dispatch(method, args)
+            except Exception as exc:
+                log.exception("The method %s failed", method)
+                error = str(exc)
+
+            def finish():
+                try:
+                    if error is not None:
+                        invocation.return_dbus_error("org.peppermint.Error", error)
+                    else:
+                        invocation.return_value(result)
+                finally:
+                    self._schedule_lock.release()
+                return GLib.SOURCE_REMOVE
+            GLib.idle_add(finish)
+
+        try:
+            threading.Thread(target=work, name="peppermint-scheduler", daemon=True).start()
+        except Exception as exc:
+            self._schedule_lock.release()
+            invocation.return_dbus_error("org.peppermint.Error", str(exc))
+
     def _dispatch(self, method: str, args: tuple):
+        if method == "ListSchedules":
+            return GLib.Variant("(s)", (json.dumps(self.scheduler.list()),))
+
+        if method == "RunScheduled":
+            new_id = self.scheduler.run_scheduled(args[0])
+            if new_id:
+                self.jobs.put(Job("run", new_id))
+                self._emit_update(new_id, Status.QUEUED)
+            return GLib.Variant("(i)", (new_id,))
+
+        if method in ("CreateSchedule", "PauseSchedule", "ResumeSchedule", "RemoveSchedule"):
+            try:
+                if method == "CreateSchedule":
+                    result = self.scheduler.create(args[0], args[1])
+                    return GLib.Variant("(s)", (json.dumps(result),))
+                action = {"PauseSchedule": self.scheduler.pause, "ResumeSchedule": self.scheduler.resume,
+                          "RemoveSchedule": self.scheduler.remove}[method]
+                action(args[0])
+                return None
+            finally:
+                task = self.db.get_task(args[0], with_steps=False)
+                if task:
+                    self._emit_update(task.id, task.status)
+
         if method == "AddTask":
             task_id = self.db.add_task(args[0].strip())
             log.info("New task %s: %s", task_id, args[0][:80])

@@ -186,6 +186,12 @@ class TaskBoard(Gtk.Box):
             branch.get_style_context().add_class("branch-icon")
             branch.set_tooltip_text("Forked from another task")
             heading.pack_start(branch, False, False, 0)
+        schedule = task.get("schedule")
+        if schedule:
+            clock = Gtk.Image.new_from_icon_name("appointment-soon-symbolic", Gtk.IconSize.MENU)
+            state = "enabled" if schedule.get("enabled") else "paused"
+            clock.set_tooltip_text(f"{schedule['schedule_text']} · {state} · local time")
+            heading.pack_start(clock, False, False, 0)
         status = task.get("status", "unknown")
         pill = Gtk.Label(label=STATUS_LABELS.get(status, status))
         pill.get_style_context().add_class("pill")

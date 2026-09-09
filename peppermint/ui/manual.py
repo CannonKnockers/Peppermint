@@ -163,6 +163,24 @@ MANUAL_SECTIONS = (
         "not been changed since installation. Later user changes are preserved "
         "and reported. Restore affects shortcuts only; it leaves the helper installed.",
     )),
+    ("Recurring tasks", (
+        'In a terminal, use peppermint schedule add 3 "daily at 3pm" to repeat task 3. '
+        'You can also use "every Monday", "every Friday at 09:30", "every weekday", '
+        '"every weekend", or "hourly". Times use your computer’s local timezone; '
+        'a day without a time means midnight.',
+        'A clock beside the original task shows that it has a schedule. Hover over '
+        'the clock to see its timing and whether it is enabled or paused. '
+        'Use peppermint schedule list to see all schedules. '
+        'Use peppermint schedule pause 3, peppermint schedule resume 3, or '
+        'peppermint schedule remove 3 to manage one.',
+        'Each occurrence starts a fresh conversation with the original task idea. '
+        'Normal approval requests still apply. If the original task or the previous '
+        'occurrence is unfinished or waiting for you, that occurrence is skipped. '
+        'Pausing stops future occurrences; use Stop to cancel work already queued.',
+        'Peppermint prefers systemd user timers on Linux Mint and warns if it must '
+        'use cron. Keep your desktop session running. Missed occurrences are not '
+        'replayed after shutdown or logout. Removing a schedule keeps task history.',
+    )),
     ("Sidebar and window controls", (
         "The peppermint picture in the top-left corner opens a sidebar that slides "
         "in from the left. "

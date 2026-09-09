@@ -151,6 +151,36 @@ when configured). To restore them:
 Restoration preserves later user changes and reports settings it could not
 restore. It restores keyboard settings only; it does not remove the helper.
 
+## Recurring tasks
+
+Repeat an existing task using its original idea:
+
+```bash
+peppermint schedule add 3 "daily at 3pm"
+peppermint schedule list
+peppermint schedule pause 3
+peppermint schedule resume 3
+peppermint schedule remove 3
+```
+
+Supported phrases include `every Monday`, `every Friday at 09:30`, `daily`,
+`every weekday`, `every weekend`, and `hourly`. Times are local; a day without a
+specified time means midnight. A clock on the original task shows the schedule
+and its paused/enabled state in a tooltip.
+
+Each occurrence creates a new task with fresh history and normal approval
+requests. An unfinished original task or previous occurrence blocks overlapping
+runs, including while waiting for your approval or answer. Pausing affects future
+occurrences; use the task's Stop control to cancel already queued work.
+
+Peppermint prefers systemd user timers and writes `peppermint-task-<id>.timer`
+and `.service` into `~/.config/systemd/user/`. If the user manager is unavailable,
+it falls back to cron and warns you. Keep your desktop session running; missed
+occurrences are not replayed after logout or shutdown. Removing a schedule
+preserves task history. To change its timing, remove it and add it again.
+See [recurring task implementation notes](docs/RECURRING_TASKS.md) for the API and
+validation details.
+
 ## Safety
 
 Every computer tool proposed in a conversation waits for your permission,

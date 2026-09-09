@@ -88,6 +88,10 @@ class TaskRow(Gtk.ListBoxRow):
         self.branch.set_no_show_all(True)
         header.pack_start(self.branch, False, False, 0)
 
+        self.clock = Gtk.Image.new_from_icon_name("appointment-soon-symbolic", Gtk.IconSize.MENU)
+        self.clock.set_no_show_all(True)
+        header.pack_start(self.clock, False, False, 0)
+
         self.idea = Gtk.Label(xalign=0)
         self.idea.set_ellipsize(Pango.EllipsizeMode.END)
         self.idea.set_line_wrap(False)
@@ -175,6 +179,11 @@ class TaskRow(Gtk.ListBoxRow):
         self.idea.set_text(task["idea"].replace("\n", " "))
         self.idea.set_tooltip_text(task["idea"])
         self.branch.set_visible(bool(int(task.get("parent_task_id", 0) or 0)))
+        schedule = task.get("schedule")
+        self.clock.set_visible(bool(schedule))
+        if schedule:
+            state = "enabled" if schedule.get("enabled") else "paused"
+            self.clock.set_tooltip_text(f"{schedule['schedule_text']} · {state} · local time")
 
         status = task["status"]
         if status != self._status:

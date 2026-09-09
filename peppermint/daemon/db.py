@@ -80,6 +80,18 @@ CREATE TABLE IF NOT EXISTS task_plans (
     steps TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS task_schedules (
+    task_id INTEGER PRIMARY KEY REFERENCES tasks(id) ON DELETE CASCADE,
+    schedule_text TEXT NOT NULL,
+    backend TEXT NOT NULL,
+    cron_expr TEXT NOT NULL,
+    on_calendar TEXT NOT NULL,
+    enabled INTEGER NOT NULL DEFAULT 0,
+    last_run_task_id INTEGER REFERENCES tasks(id) ON DELETE SET NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS schema_version (
     version INTEGER NOT NULL
 );
@@ -88,10 +100,11 @@ CREATE INDEX IF NOT EXISTS idx_steps_task ON steps(task_id);
 CREATE INDEX IF NOT EXISTS idx_messages_task ON messages(task_id);
 CREATE INDEX IF NOT EXISTS idx_confirm_task ON confirmations(task_id, resolved);
 CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
+CREATE INDEX IF NOT EXISTS idx_task_schedules_enabled ON task_schedules(enabled);
 """
 
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 # Each migration takes a connection and moves the database up by one version.
 # A migration must be safe to run on a database that real work already used.
@@ -114,6 +127,20 @@ MIGRATIONS: dict[int, list[str]] = {
     ],
     4: [
         "ALTER TABLE tasks ADD COLUMN parent_task_id INTEGER NOT NULL DEFAULT 0",
+    ],
+    5: [
+        "CREATE TABLE IF NOT EXISTS task_schedules ("
+        "    task_id INTEGER PRIMARY KEY REFERENCES tasks(id) ON DELETE CASCADE,"
+        "    schedule_text TEXT NOT NULL,"
+        "    backend TEXT NOT NULL,"
+        "    cron_expr TEXT NOT NULL,"
+        "    on_calendar TEXT NOT NULL,"
+        "    enabled INTEGER NOT NULL DEFAULT 0,"
+        "    last_run_task_id INTEGER REFERENCES tasks(id) ON DELETE SET NULL,"
+        "    created_at TEXT NOT NULL,"
+        "    updated_at TEXT NOT NULL"
+        ")",
+        "CREATE INDEX IF NOT EXISTS idx_task_schedules_enabled ON task_schedules(enabled)",
     ],
 }
 
@@ -358,6 +385,61 @@ class Database:
             )
             return int(cur.lastrowid)
 
+    # --- recurring schedules -----------------------------------------------
+
+    def get_schedule(self, task_id: int) -> dict | None:
+        row = self.connection().execute(
+            "SELECT * FROM task_schedules WHERE task_id = ?", (task_id,)).fetchone()
+        return dict(row) if row else None
+
+    def list_schedules(self) -> list[dict]:
+        return [dict(row) for row in self.connection().execute(
+            "SELECT * FROM task_schedules ORDER BY task_id")]
+
+    def add_schedule(self, task_id, text, backend, cron_expr, on_calendar):
+        ts = now()
+        with self.connection() as conn:
+            conn.execute(
+                "INSERT INTO task_schedules "
+                "(task_id, schedule_text, backend, cron_expr, on_calendar, created_at, updated_at) "
+                "VALUES (?,?,?,?,?,?,?)", (task_id, text, backend, cron_expr, on_calendar, ts, ts))
+
+    def set_schedule_enabled(self, task_id, enabled):
+        with self.connection() as conn:
+            conn.execute("UPDATE task_schedules SET enabled = ?, updated_at = ? WHERE task_id = ?",
+                         (int(enabled), now(), task_id))
+
+    def remove_schedule(self, task_id):
+        with self.connection() as conn:
+            conn.execute("DELETE FROM task_schedules WHERE task_id = ?", (task_id,))
+
+    def create_scheduled_run(self, task_id: int) -> int:
+        """Atomically claim an occurrence. Fresh history means fresh approvals.
+
+        A paused/removed schedule or an unfinished template/previous run is a
+        no-op. Keep the template and all previous run history unchanged.
+        """
+        conn = self.connection()
+        with conn:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute(
+                "SELECT s.*, t.idea, t.status FROM task_schedules s "
+                "JOIN tasks t ON t.id = s.task_id WHERE s.task_id = ?", (task_id,)).fetchone()
+            if row is None or not row['enabled'] or not Status(row['status']).is_final:
+                return 0
+            previous = conn.execute("SELECT status FROM tasks WHERE id = ?",
+                                    (row['last_run_task_id'],)).fetchone()
+            if previous and not Status(previous['status']).is_final:
+                return 0
+            ts = now()
+            cur = conn.execute(
+                "INSERT INTO tasks (idea, status, created_at, updated_at) VALUES (?,?,?,?)",
+                (row['idea'], Status.QUEUED.value, ts, ts))
+            new_id = int(cur.lastrowid)
+            conn.execute("UPDATE task_schedules SET last_run_task_id = ?, updated_at = ? WHERE task_id = ?",
+                         (new_id, ts, task_id))
+            return new_id
+
     def set_status(self, task_id: int, status: Status, *, allow_cancelled: bool = False, **fields) -> None:
         cols = ["status = ?", "updated_at = ?"]
         vals: list = [status.value, now()]
@@ -376,7 +458,8 @@ class Database:
 
     def get_task(self, task_id: int, with_steps: bool = True) -> Task | None:
         conn = self.connection()
-        row = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
+        row = conn.execute("SELECT t.*, s.schedule_text, s.enabled AS schedule_enabled FROM tasks t "
+                           "LEFT JOIN task_schedules s ON s.task_id = t.id WHERE t.id = ?", (task_id,)).fetchone()
         if row is None:
             return None
         task = self._row_to_task(row)
@@ -587,7 +670,8 @@ class Database:
     def list_tasks(self, limit: int = 50) -> list[Task]:
         conn = self.connection()
         rows = conn.execute(
-            "SELECT * FROM tasks ORDER BY id DESC LIMIT ?", (limit,)
+            "SELECT t.*, s.schedule_text, s.enabled AS schedule_enabled FROM tasks t "
+            "LEFT JOIN task_schedules s ON s.task_id = t.id ORDER BY t.id DESC LIMIT ?", (limit,)
         ).fetchall()
         tasks = [self._row_to_task(r) for r in rows]
         for task in tasks:
@@ -643,7 +727,8 @@ class Database:
                 counts[row["status"]] = row["count"]
             matched = conn.execute("SELECT COUNT(*) FROM tasks t" + where, params).fetchone()[0]
             rows = conn.execute(
-                "SELECT t.*, p.steps AS overview_plan FROM tasks t "
+                "SELECT t.*, p.steps AS overview_plan, s.schedule_text, s.enabled AS schedule_enabled FROM tasks t "
+                "LEFT JOIN task_schedules s ON s.task_id = t.id "
                 "LEFT JOIN task_plans p ON p.task_id = t.id" + where +
                 " ORDER BY t.updated_at DESC, t.id DESC LIMIT ? OFFSET ?",
                 [*params, limit, offset],
@@ -720,6 +805,8 @@ class Database:
             error=row["error"],
             question=row["question"],
         )
+        if 'schedule_text' in row.keys() and row['schedule_text']:
+            task.schedule = {'schedule_text': row['schedule_text'], 'enabled': bool(row['schedule_enabled'])}
         from peppermint.common.secrets import history_secrets
         task._display_secrets = history_secrets(self.get_messages(task.id))
         return task

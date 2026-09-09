@@ -1,3 +1,17 @@
+# Latest increment — recurring tasks, 2026-09-09
+
+Recurring tasks now support natural-language timing, systemd user timers with
+cron fallback, pause/resume/remove commands, and clock indicators. The daemon
+is loaded with schema 5. No actual recurring task was installed during this work.
+
+See [RECURRING_TASKS.md](RECURRING_TASKS.md) for the current implementation,
+commands, tests and Spark handoff. Feature tests: **45 passed**. Full suite:
+**1470 passed, 1 pre-existing failure** in the overview/password-masking test.
+The user requested a local commit of this increment; check `git log -1` for its ID.
+No push was requested. The earlier completed baseline below is historical.
+
+---
+
 # Project checkpoint — 2026-09-08
 
 The task system, visual diagnostics, sidebar/manual and recovery/session-control

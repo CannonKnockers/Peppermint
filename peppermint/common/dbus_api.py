@@ -42,6 +42,27 @@ DAEMON_XML = """
       <arg type="s" name="new_idea" direction="in"/>
       <arg type="i" name="id" direction="out"/>
     </method>
+    <method name="CreateSchedule">
+      <arg type="i" name="task_id" direction="in"/>
+      <arg type="s" name="schedule" direction="in"/>
+      <arg type="s" name="json" direction="out"/>
+    </method>
+    <method name="ListSchedules">
+      <arg type="s" name="json" direction="out"/>
+    </method>
+    <method name="PauseSchedule">
+      <arg type="i" name="task_id" direction="in"/>
+    </method>
+    <method name="ResumeSchedule">
+      <arg type="i" name="task_id" direction="in"/>
+    </method>
+    <method name="RemoveSchedule">
+      <arg type="i" name="task_id" direction="in"/>
+    </method>
+    <method name="RunScheduled">
+      <arg type="i" name="task_id" direction="in"/>
+      <arg type="i" name="run_id" direction="out"/>
+    </method>
     <method name="ListPlugins">
       <arg type="s" name="json" direction="out"/>
     </method>
