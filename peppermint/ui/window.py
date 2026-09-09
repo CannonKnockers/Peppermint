@@ -14,6 +14,7 @@ from peppermint.ui.main_menu import MainMenu, PAGES  # noqa: E402
 from peppermint.ui.manual import UserManual  # noqa: E402
 from peppermint.ui.secret_entry import configure_secret_entry
 from peppermint.ui.task_row import TaskRow  # noqa: E402
+from peppermint.ui.plugins_view import PluginsView
 from peppermint.ui.task_board import TaskBoard  # noqa: E402
 from peppermint.ui.daemon_reader import DaemonReader  # noqa: E402
 from peppermint.ui.diagnostics_view import DiagnosticsView  # noqa: E402
@@ -29,6 +30,7 @@ class PeppermintWindow(Gtk.ApplicationWindow):
         self.rows: dict[int, TaskRow] = {}
         self._reader = reader or DaemonReader()
         self._destroyed = False
+        self._schedule_dialog = None
         self._diagnostic_task_id = None
         self._opening_task_id = None
         self._diagnostics_view = diagnostics
@@ -137,12 +139,14 @@ class PeppermintWindow(Gtk.ApplicationWindow):
         self.pages.set_vhomogeneous(False)
         workspace.pack_start(self.pages, True, True, 0)
 
-        self.task_board = TaskBoard(self._query_overview, self.open_task, self.open_diagnostics, self.new_task)
+        self.task_board = TaskBoard(self._query_overview, self.open_task, self.open_diagnostics, self.new_task, self.open_schedule)
         self.pages.add_titled(self.task_board, "tasks", "Tasks")
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
         self.pages.add_titled(box, "conversations", "Conversations")
         self.diagnostics = self._diagnostics_view or DiagnosticsView()
         self.pages.add_titled(self.diagnostics, "diagnostics", "Diagnostics")
+        self.plugins_view = PluginsView()
+        self.pages.add_titled(self.plugins_view, "plugins", "Plugins")
         self.manual = UserManual()
         self.pages.add_titled(self.manual, "manual", "User manual")
         self.pages.connect("notify::visible-child-name", self._page_changed)
@@ -328,6 +332,8 @@ class PeppermintWindow(Gtk.ApplicationWindow):
 
     def _page_changed(self, *_):
         page = self.pages.get_visible_child_name()
+        if page == "plugins":
+            self.plugins_view.reload()
         self.main_menu.set_page(page)
         self.page_title.set_text(next((title for name, title, _ in PAGES if name == page), {'recovery': 'Recovery', 'tracking': 'Tracking report'}.get(page, 'Peppermint')))
 
@@ -390,6 +396,8 @@ class PeppermintWindow(Gtk.ApplicationWindow):
         if self._destroyed:
             return
         self.task_board.reload()
+        if self.pages.get_visible_child_name() == "plugins":
+            self.plugins_view.reload()
         self._reader.request("conversations", "ListTasks", GLib.Variant("(i)", (40,)), self._accept_tasks)
         if details:
             if self._active_task_id is not None:
@@ -591,6 +599,17 @@ class PeppermintWindow(Gtk.ApplicationWindow):
         self.pages.set_visible_child_name("diagnostics")
         self.request_detail(task_id)
 
+    def open_schedule(self, task_id: int) -> None:
+        from peppermint.ui.schedule_dialog import ScheduleDialog
+        if self._schedule_dialog is not None:
+            self._schedule_dialog.present()
+            return
+        self._schedule_dialog = ScheduleDialog(self, task_id, self.refresh)
+        self._schedule_dialog.connect("destroy", self._schedule_closed)
+
+    def _schedule_closed(self, *_):
+        self._schedule_dialog = None
+
     def _error_dialog(self, message: str) -> None:
         dialog = Gtk.MessageDialog(transient_for=self, modal=True,
                                    message_type=Gtk.MessageType.ERROR,
@@ -604,6 +623,8 @@ class PeppermintWindow(Gtk.ApplicationWindow):
 
     def _on_destroy(self, *_):
         self._destroyed = True
+        if self._schedule_dialog is not None:
+            self._schedule_dialog.destroy()
         try:
             self.tracking.close()
         except OSError:

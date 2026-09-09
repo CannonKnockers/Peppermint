@@ -64,10 +64,10 @@ def _iter_media_values(value: Any) -> Iterable[Path]:
         value = value.strip()
         if not value:
             return
-        if _looks_like_path(value):
-            candidate = Path(value).expanduser()
-            if candidate.is_file():
-                yield candidate
+        expanded = Path(value).expanduser()
+        if _looks_like_path(str(expanded)):
+            if expanded.is_file():
+                yield expanded
             return
 
         if (value.startswith("{") and value.endswith("}")) or (value.startswith("[") and value.endswith("]")):
@@ -178,13 +178,18 @@ def _check_compatibility(metadata: dict) -> None:
 
     local_version = _peppermint_version()
     try:
-        if _parse_version(archive_version) != _parse_version(local_version):
-            raise ValueError
+        archive_maj, archive_min = _parse_version(archive_version)
+        local_maj, local_min = _parse_version(local_version)
     except ValueError as exc:
+        raise ImportError(
+            f"The archive version '{archive_version}' is not a valid Peppermint version."
+        ) from exc
+
+    if archive_maj != local_maj or archive_min > local_min:
         raise ImportError(
             f"This archive was exported with Peppermint {archive_version}, "
             f"which is not compatible with {local_version}."
-        ) from exc
+        )
 
 
 def import_archive(db, archive_path: str | Path, *, model: str) -> dict:
@@ -205,10 +210,10 @@ def import_archive(db, archive_path: str | Path, *, model: str) -> dict:
             f"Archive model '{archive_model}' differs from this instance model '{model}'. "
             "Imported task history may reference model-specific output.")
 
-    tasks = _archive_tasks(raw_tasks)[0]
+    _archive_tasks(raw_tasks)  # validate archive payload
 
     imported: list[int] = []
-    for task in tasks:
+    for task in raw_tasks:
         imported.append(db.import_task_from_portable(task))
 
     return {"task_ids": imported, "warnings": warnings}

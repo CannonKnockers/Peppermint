@@ -24,7 +24,10 @@ or `at 15:30`. No time means midnight. Times use the computer's local timezone.
 Unsupported phrases and invalid times return an error instead of guessing.
 
 The original task has a clock icon on task cards and conversation rows. Hover
-for its schedule and paused/enabled state. Management is through the CLI.
+for its schedule and paused/enabled state. On the Tasks page, use Schedule or
+Manage schedule to create, pause, resume, or remove a schedule. The dialog reads
+saved state, keeps daemon calls off the GTK thread, blocks duplicate actions,
+and displays errors and cron warnings. The CLI remains available.
 
 ## Execution rules
 
@@ -77,7 +80,20 @@ D-Bus methods (input -> output):
 | RemoveSchedule | task ID `i` | none |
 | RunScheduled | task ID `i` | new task ID `i`, or 0 when skipped |
 
-## Verified
+## UI controls validation — 2026-09-09
+
+- New schedule-controls tests and existing workspace/scheduler tests: 76 passed.
+- Full suite: 1479 passed, one parked summary-loading failure, 21.16s.
+- Tested create/pause/resume/remove, invalid input, partial failure with saved
+  paused state, cron warnings, offline retry, duplicate-click protection,
+  late callbacks after destruction, and singleton window integration.
+- Live GTK dialog successfully loaded task 40 over D-Bus without creating a
+  schedule. No timer or cron changes were made. Compilation/diff checks passed.
+- Main UI was left running to preserve drafts. Save/send drafts, choose Hide the
+  Peppermint icon in the tray menu, then reopen to load the new buttons.
+- New files: ui/schedule_dialog.py and tests/test_schedule_controls.py.
+
+## Original backend validation
 
 - `tests/test_scheduler.py`: **45 passed**. Tests use temporary databases/files
   and mocked systemd/crontab calls. GTK display was available; the clock test ran.
@@ -99,15 +115,15 @@ D-Bus methods (input -> output):
   Backup: `~/.local/share/peppermint/backups/before-recurring-20260909-112017.db`
   (mode 0600). Main UI was not restarted; clock rendering was checked in GTK tests.
 
-## Remaining pre-existing test issue
+## Parked summary-loading test issue
 
 `tests/test_task_overview.py::test_summaries_include_plans_without_reading_logs_or_messages`
 expects overview rows to avoid all conversation reads and use exactly 3 SELECTs.
 Existing `Database._row_to_task()` calls `get_messages()` to identify passwords
 for display masking. That behavior already existed before scheduling changes.
 Schedule data is joined into the existing task query, without per-task schedule
-reads. Do not remove password masking to satisfy the old test. A separate fix
-should reconcile efficient summary reads with password redaction and test both.
+reads. Do not remove password masking to satisfy the old test. The user has parked this issue; do not work on it without new direction.
+A future fix should reconcile efficient summary reads with password redaction and test both.
 
 ## Resume commands
 

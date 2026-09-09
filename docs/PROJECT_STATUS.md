@@ -1,3 +1,47 @@
+# Latest increment — sidebar plugin management, 2026-09-09
+
+Plugins now opens inside the main window from the sidebar. It lists installed
+plugins, state, loaded tools, file location, and saved load/crash details. Users
+can enable, disable and refresh plugins. Failed enables stay disabled; successful
+enables clear old errors. Task approval behavior is unchanged.
+
+Validation: 34 focused checks passed. Full suite: 1487 passed, one parked
+summary-loading failure. Live GTK/D-Bus read passed; the daemon was reloaded and
+is healthy. No installed plugins or live plugin changes. Main UI needs a restart
+to load the new sidebar page. Changes are uncommitted; see NEXT_SESSION.md.
+
+Archive repairs and summary loading remain parked. Password masking works.
+
+---
+
+# Latest check — archive round trip, 2026-09-09
+
+The audit found four concrete portability failures: real SQLite step export,
+media restoration, fork parent remapping, and rollback of multi-task imports.
+Four other checks passed. Existing archive unit tests pass but did not cover the
+complete real-database path. Production code and live data were unchanged.
+
+See [archive audit](evaluations/archive-roundtrip-2026-09-09.md) and
+`scripts/check_archive_roundtrip.py` for reproducible evidence and the repair order.
+Password masking works; summary loading remains parked.
+
+---
+
+# Latest increment — schedule UI controls, 2026-09-09
+
+Tasks now have Schedule / Manage schedule buttons for creating, pausing, resuming
+and removing recurring schedules. The dialog stays responsive during daemon
+calls and displays saved state, failures and cron warnings. README and User
+manual include the controls. See NEXT_SESSION.md for the current handoff.
+
+Validation: 76 focused tests passed; full suite 1479 passed, one parked
+summary-loading test failure. Live GTK-to-D-Bus loading passed. No schedules
+were created and no daemon or database logic changed. Main UI still needs a
+restart to load the controls; it was left running to preserve drafts.
+These UI changes are uncommitted. Password masking and summary loading are unchanged.
+
+---
+
 # Latest increment — recurring tasks, 2026-09-09
 
 Recurring tasks now support natural-language timing, systemd user timers with

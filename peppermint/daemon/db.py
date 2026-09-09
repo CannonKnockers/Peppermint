@@ -450,7 +450,7 @@ class Database:
         with self.connection() as conn:
             condition = "" if allow_cancelled or status is Status.CANCELLED else " AND status != 'cancelled'"
             conn.execute(f"UPDATE tasks SET {', '.join(cols)} WHERE id = ?{condition}", vals)
-            if status.is_final:
+            if status.is_final and status is not Status.DONE:
                 conn.execute("UPDATE steps SET status = 'cancelled', output = 'This approval is no longer active.' "
                              "WHERE task_id = ? AND status = 'pending'", (task_id,))
                 conn.execute("UPDATE confirmations SET resolved = 1, approved = 0 "

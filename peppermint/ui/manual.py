@@ -163,7 +163,22 @@ MANUAL_SECTIONS = (
         "not been changed since installation. Later user changes are preserved "
         "and reported. Restore affects shortcuts only; it leaves the helper installed.",
     )),
+    ("Plugins", (
+        'Open the peppermint sidebar and choose Plugins. Each installed plugin shows '
+        'whether it is enabled, disabled or not loaded, plus its available tools. '
+        'Use Enable or Disable to change its state without opening a terminal.',
+        'Enable loads the plugin’s Python code. Task actions still use the normal '
+        'approval controls. A plugin that fails to load stays disabled. Last failure '
+        'shows saved load or tool-crash details; successful enabling clears that error.',
+        'Install plugin .py files in ~/.config/peppermint/tools/ and click Refresh plugins '
+        'to discover them. A new file can be enabled from this page. Refresh also '
+        'updates the page after a plugin crashes or its state changes elsewhere. '
+        'Plugin file expands to show the installed location. Older failures without '
+        'saved details are not reconstructed.',
+    )),
     ("Recurring tasks", (
+        'On the Tasks page, click Schedule on a task, choose an example or type a time, '
+        'then click Create schedule. Use Manage schedule to Pause, Resume, or Remove it. '
         'In a terminal, use peppermint schedule add 3 "daily at 3pm" to repeat task 3. '
         'You can also use "every Monday", "every Friday at 09:30", "every weekday", '
         '"every weekend", or "hourly". Times use your computer’s local timezone; '

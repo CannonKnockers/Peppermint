@@ -74,9 +74,20 @@ class LLM:
             data = self.client.list()
         except Exception as exc:
             raise LLMError(f"Ollama does not answer at {self.host}: {exc}") from exc
+
+        if isinstance(data, list):
+            models_list = data
+        elif isinstance(data, dict):
+            models_list = data.get("models", [])
+        else:
+            models_list = getattr(data, "models", [])
+
         names = []
-        for item in getattr(data, "models", data.get("models", []) if isinstance(data, dict) else []):
-            name = getattr(item, "model", None) or (item.get("model") if isinstance(item, dict) else None)
+        for item in models_list:
+            if isinstance(item, dict):
+                name = item.get("model")
+            else:
+                name = getattr(item, "model", None)
             if name:
                 names.append(name)
         return names

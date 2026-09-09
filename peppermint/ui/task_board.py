@@ -26,11 +26,12 @@ def updated_label(value):
 
 
 class TaskBoard(Gtk.Box):
-    def __init__(self, on_query, on_open, on_diagnostics, on_new):
+    def __init__(self, on_query, on_open, on_diagnostics, on_new, on_schedule=None):
         super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=14)
         self._on_query = on_query
         self._on_open = on_open
         self._on_diagnostics = on_diagnostics
+        self._on_schedule = on_schedule
         self._search_timer = None
         self.offset = 0
         self.limit = 40
@@ -220,5 +221,10 @@ class TaskBoard(Gtk.Box):
         diagnostics.connect("clicked", lambda *_: self._on_diagnostics(int(task["id"])))
         actions.pack_start(open_button, False, False, 0)
         actions.pack_start(diagnostics, False, False, 0)
+        if self._on_schedule:
+            schedule_button = Gtk.Button(label="Manage schedule" if schedule else "Schedule")
+            schedule_button.get_style_context().add_class("task-link")
+            schedule_button.connect("clicked", lambda *_: self._on_schedule(int(task["id"])))
+            actions.pack_start(schedule_button, False, False, 0)
         card.pack_start(actions, False, False, 0)
         return card

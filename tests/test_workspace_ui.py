@@ -438,3 +438,46 @@ def test_process_tracking_runs_without_graphs_until_report_selected(window, tmp_
         assert not host.main_menu.history_expander.get_expanded()
     finally:
         host.destroy()
+
+
+def test_schedule_controls_reuse_dialog_and_refresh(window, monkeypatch):
+    from unittest.mock import Mock
+    from peppermint.ui import schedule_dialog
+    created = []
+
+    class Dialog(Gtk.Dialog):
+        def __init__(self, parent, task_id, on_changed):
+            super().__init__(transient_for=parent)
+            self.task_id = task_id
+            self.on_changed = on_changed
+            created.append(self)
+
+    monkeypatch.setattr(schedule_dialog, 'ScheduleDialog', Dialog)
+    window.refresh = Mock()
+    assert window.task_board._on_schedule == window.open_schedule
+    window.open_schedule(7)
+    window.open_schedule(8)
+    assert len(created) == 1
+    assert created[0].task_id == 7
+    created[0].on_changed()
+    window.refresh.assert_called_once()
+    created[0].destroy()
+    assert window._schedule_dialog is None
+    window.open_schedule(8)
+    assert created[1].task_id == 8
+    window.destroy()
+    assert window._schedule_dialog is None
+
+
+def test_plugins_sidebar_opens_in_same_window_and_refreshes(window, monkeypatch):
+    from unittest.mock import Mock
+    reload = Mock()
+    monkeypatch.setattr(window.plugins_view, 'reload', reload)
+    before = set(Gtk.Window.list_toplevels())
+    window.main_menu.navigation['plugins'].clicked()
+    assert window.pages.get_visible_child_name() == 'plugins'
+    assert window.page_title.get_text() == 'Plugins'
+    assert set(Gtk.Window.list_toplevels()) == before
+    reload.assert_called_once()
+    window.refresh()
+    assert reload.call_count == 2

@@ -151,9 +151,25 @@ when configured). To restore them:
 Restoration preserves later user changes and reports settings it could not
 restore. It restores keyboard settings only; it does not remove the helper.
 
+## Plugin controls
+
+Open the peppermint sidebar and choose **Plugins**. The page lists installed
+plugins, loaded tools and enabled/disabled state. Use **Enable** or **Disable**
+without leaving the window. Enabling loads the plugin's Python code; task actions
+still use normal approval controls.
+
+Failed loads stay disabled. Saved load and tool-crash details appear under
+**Last failure**, and a successful enable clears them. Use **Refresh plugins**
+after adding `.py` files to `~/.config/peppermint/tools/`, after a crash, or after
+changing plugin state elsewhere. Expand **Plugin file** to see its location.
+Older failures without recorded details cannot be reconstructed.
+
 ## Recurring tasks
 
-Repeat an existing task using its original idea:
+On the **Tasks** page, click **Schedule** on a task. Choose an example or type a
+schedule, then click **Create schedule**. **Manage schedule** opens Pause, Resume,
+and Remove controls for an existing schedule. Errors and cron fallback warnings
+appear in the schedule window. These actions also remain available in the terminal:
 
 ```bash
 peppermint schedule add 3 "daily at 3pm"

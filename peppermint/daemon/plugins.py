@@ -8,7 +8,7 @@ import json
 import logging
 import re
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -40,6 +40,7 @@ def handle_plugin_failure(plugin_name: str, tool_name: str, exc: Exception) -> N
 
     if ACTIVE_MANAGER is not None:
         try:
+            ACTIVE_MANAGER.state.errors[plugin_name] = f"{tool_name}: {type(exc).__name__}: {exc}"
             ACTIVE_MANAGER.disable(plugin_name)
         except Exception:
             ACTIVE_MANAGER.disable(plugin_name, notify=False)
@@ -92,6 +93,7 @@ def plugin_tool(
 @dataclass
 class PluginState:
     disabled: set[str]
+    errors: dict[str, str] = field(default_factory=dict)
 
     @classmethod
     def load(cls, path: Path) -> "PluginState":
@@ -99,14 +101,14 @@ class PluginState:
             return cls(set())
         try:
             payload = json.loads(path.read_text())
-            return cls(set(payload.get("disabled", [])))
+            return cls(set(payload.get("disabled", [])), dict(payload.get("errors", {})))
         except Exception:
             log.warning("Ignoring corrupted plugin state at %s", path)
             return cls(set())
 
     def save(self, path: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps({"disabled": sorted(self.disabled)}, indent=2) + "\n")
+        path.write_text(json.dumps({"disabled": sorted(self.disabled), "errors": self.errors}, indent=2) + "\n")
 
 
 class PluginManager:
@@ -160,6 +162,7 @@ class PluginManager:
                 "path": str((self.plugin_dir / f"{name}.py").resolve()),
                 "tools": sorted(self._plugin_tools(name)),
                 "loaded": name in self.loaded,
+                "error": self.state.errors.get(name, ""),
             }
             for name in available
         ]
@@ -183,6 +186,7 @@ class PluginManager:
                 self.loaded.add(name)
             except Exception as exc:
                 # Keep a bad plugin out of service and continue with others.
+                self.state.errors[name] = f"{type(exc).__name__}: {exc}"
                 self.disable(name, notify=False)
                 if name not in self.state.disabled:
                     self.state.disabled.add(name)
@@ -193,13 +197,18 @@ class PluginManager:
         if name not in available:
             raise ValueError(f"Unknown plugin: {name}")
 
+        if name not in self.loaded:
+            path = self.plugin_dir / f"{name}.py"
+            try:
+                self._load_plugin_file(path, name)
+                self.loaded.add(name)
+            except Exception as exc:
+                self.state.errors[name] = f"{type(exc).__name__}: {exc}"
+                self.disable(name, notify=False)
+                raise
         self.state.disabled.discard(name)
+        self.state.errors.pop(name, None)
         self.state.save(self.state_path)
-        if name in self.loaded:
-            return
-        path = self.plugin_dir / f"{name}.py"
-        self._load_plugin_file(path, name)
-        self.loaded.add(name)
 
     def disable(self, name: str, notify: bool = True) -> None:
         available = {path.stem for path in self._discover()}

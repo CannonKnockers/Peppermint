@@ -101,3 +101,36 @@ def test_cli_plugin_commands_call_expected_bus_methods(monkeypatch, capsys):
     assert cli.main(["plugin", "disable", "sample"]) == 0
     assert calls[2][0][0] == "DisablePlugin"
     assert calls[2][0][1].unpack() == ("sample",)
+
+
+def test_failed_enable_remains_disabled_and_reports_error(tmp_path):
+    _write_plugin(tmp_path, 'broken', 'raise RuntimeError("load failed")')
+    manager = PluginManager(plugin_dir=tmp_path, state_path=tmp_path / 'state.json')
+    with pytest.raises(RuntimeError, match='load failed'):
+        manager.enable('broken')
+    row = manager.list()[0]
+    assert not row['enabled'] and not row['loaded']
+    assert row['error'] == 'RuntimeError: load failed'
+    recovered = PluginManager(plugin_dir=tmp_path, state_path=tmp_path / 'state.json')
+    assert recovered.list()[0]['error'] == row['error']
+    _write_plugin(tmp_path, 'broken', '# repaired plugin\n')
+    recovered.enable('broken')
+    assert recovered.list()[0]['error'] == ''
+    assert recovered.list()[0]['loaded']
+    recovered.disable('broken', notify=False)
+
+
+def test_runtime_crash_exposes_error(tmp_path):
+    _write_plugin(tmp_path, 'crashy', '''
+        import peppermint
+        @peppermint.tool(name="audit_crash_tool", description="test", requires_approval=False)
+        def audit_crash_tool(ctx=None):
+            raise RuntimeError("test crash details")
+    ''')
+    manager = PluginManager(plugin_dir=tmp_path, state_path=tmp_path / 'state.json')
+    manager.load_plugins()
+    with pytest.raises(ToolError):
+        tools.call('audit_crash_tool', {}, Context(1, require_approval=False))
+    row = manager.list()[0]
+    assert not row['enabled'] and not row['loaded']
+    assert 'test crash details' in row['error']

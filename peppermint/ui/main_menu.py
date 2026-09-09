@@ -10,6 +10,7 @@ PAGES = (
     ('tasks', 'Tasks', 'view-list-symbolic'),
     ('conversations', 'Conversations', 'user-available-symbolic'),
     ('diagnostics', 'Diagnostics', 'utilities-system-monitor-symbolic'),
+    ('plugins', 'Plugins', 'application-x-addon-symbolic'),
     ('manual', 'User manual', 'help-browser-symbolic'),
 )
 

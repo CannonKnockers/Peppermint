@@ -1,16 +1,86 @@
-# Current handoff — recurring tasks
+# Current handoff — Plugins in the sidebar
 
-Updated 2026-09-09. Read [RECURRING_TASKS.md](RECURRING_TASKS.md) first. It records
-what changed, exact commands, tests, runtime state and the remaining issue in
-plain language for the next Spark session.
+Updated 2026-09-09. Plugin management is implemented and uncommitted.
 
-Recurring schedules are implemented and the daemon is loaded. All 45 feature
-tests pass. Full suite: 1470 passed, one pre-existing overview/password-masking
-test conflict. No live schedules were installed. The user requested a local commit;
-check `git log -1` for its ID. No push was requested.
-Preserve the pre-existing archive.py edit. Next separate fix: reconcile overview
-query efficiency with password masking, then rerun the full suite before calling
-this a fully green commit checkpoint.
+The sidebar has a Plugins destination inside the existing window. The page
+shows enabled/disabled/not-loaded state, loaded tools, expandable file location,
+and saved failure details. Enable/Disable actions run off the GTK thread and
+reload daemon state on success or failure. Refresh discovers new files and
+updates state after crashes or CLI changes. Duplicate actions are blocked;
+unavailable saved state leaves old actions disabled until Refresh succeeds.
+
+Backend: PluginState now persists an errors mapping (backward compatible with
+older state files). ListPlugins includes an error field. Load and runtime
+failures record details; failed enables remain disabled; successful enables
+clear errors. Older failures without saved details cannot be reconstructed.
+No changes were made to tool approval rules.
+
+Files: ui/plugins_view.py, ui/main_menu.py, ui/window.py, daemon/plugins.py,
+README, User manual, tests/test_plugins_view.py, tests/test_plugins.py, and the
+sidebar integration test in tests/test_workspace_ui.py.
+
+Validation: 34 focused tests passed; full suite 1487 passed, one parked
+summary-loading failure (21.63s). Diff and compilation checks passed. The idle
+daemon was restarted and is healthy. A live GTK Plugins page read ListPlugins
+successfully. Zero installed plugins; no live enable/disable actions performed.
+The main UI was left running to preserve drafts. Save/send drafts, choose Hide
+the Peppermint icon in its tray menu, then reopen to load the new sidebar page.
+
+Preserve all preceding uncommitted bug fixes, schedule controls and archive-audit
+files. Archive repairs and summary loading are parked. Password masking works.
+No commit or push was performed in this increment.
+
+---
+
+# Current handoff — archive round-trip audit
+
+Updated 2026-09-09. The archive check is complete: **4 passed, 4 failed**.
+Read [the audit](evaluations/archive-roundtrip-2026-09-09.md) for exact evidence,
+causes and repair order. Reproduce with:
+
+```sh
+PYTHONPATH=. .venv/bin/python scripts/check_archive_roundtrip.py
+```
+
+Failures: real step export rejects stored JSON arguments; imported media is not
+restored; fork parent IDs are not remapped; a later import failure leaves earlier
+tasks committed. Existing mocked archive tests still pass (4 tests).
+No production code was changed for the audit. No live data was imported.
+Next repair starts with decoding step arguments during export, then the remaining
+portable-media, ancestry and transaction issues. Summary loading remains parked.
+
+Preserve all existing uncommitted four-bug-fix and schedule-control changes.
+The preceding UI handoff below still records its validation and reload needs.
+
+---
+
+# Current handoff — schedule UI controls
+
+Updated 2026-09-09. Schedule controls are implemented but uncommitted.
+The recurring backend was committed as d62fda4. No push was requested.
+
+On the Tasks page, each task has Schedule or Manage schedule. The dialog creates,
+pauses, resumes and removes schedules through the existing D-Bus methods. It
+loads saved state, runs calls off the GTK thread, blocks duplicate actions,
+and shows daemon errors and cron fallback warnings. No backend logic changed.
+
+Files: ui/schedule_dialog.py, ui/task_board.py, ui/window.py, ui/manual.py,
+tests/test_schedule_controls.py, and the window integration test.
+README and RECURRING_TASKS.md explain the controls.
+
+Validation: 76 focused tests passed. Full suite: 1479 passed, one existing
+summary-loading failure, 21.16s. Compilation and diff checks passed. A live GTK
+dialog read task 40 from the running daemon. No schedules were created.
+
+The existing main UI process was not restarted, to preserve unsent text. To load
+the new controls, save/send drafts, use the tray menu's Hide the Peppermint icon
+(which quits the UI), then reopen Peppermint. Closing the main window only hides
+it and does not reload code. The daemon does not need a restart for these controls.
+
+Preserve the earlier four bug fixes in archive.py, db.py and llm.py. Password
+masking works. The user explicitly parked summary-loading work; do not treat its
+existing test failure as the next task. No masking or summary query changes were
+made for this UI increment.
 
 The older checkpoint below is historical; do not use its PIDs, test counts or
 publication instructions as current state.
