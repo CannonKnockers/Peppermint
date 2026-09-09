@@ -137,15 +137,15 @@ with tempfile.TemporaryDirectory(prefix='peppermint-roundtrip-') as folder:
             source.add_task('Second')
             target = archive.export_archive(source, None, model='test-model', base_dir=root / 'atomic')
             dest = Database(':memory:')
-            original = dest.import_task_from_portable
+            original = dest._insert_portable_task
             calls = 0
-            def fail_second(task):
+            def fail_second(conn, task):
                 nonlocal calls
                 calls += 1
                 if calls == 2:
                     raise RuntimeError('Synthetic database write failure')
-                return original(task)
-            with patch.object(dest, 'import_task_from_portable', fail_second):
+                return original(conn, task)
+            with patch.object(dest, '_insert_portable_task', fail_second):
                 try:
                     archive.import_archive(dest, target, model='test-model')
                 except RuntimeError:

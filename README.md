@@ -151,6 +151,35 @@ when configured). To restore them:
 Restoration preserves later user changes and reports settings it could not
 restore. It restores keyboard settings only; it does not remove the helper.
 
+## Portable archives
+
+```sh
+peppermint export 3
+peppermint export --all
+peppermint import /path/to/tasks.peppermint
+```
+
+Exports are ZIP files with task history, metadata and referenced media. Import
+assigns new task/step IDs and restores conversations, approval history, plans,
+and fork links between included tasks. A parent outside the archive is detached
+with a warning. Importing does not install recurring timers.
+
+New archives include a media mapping. Files restore into a separate directory
+under `~/.local/share/peppermint/imports/` (or the configured data directory), and
+exact file references in history and serialized JSON are relocated. Original
+files are not overwritten. Older archives without a mapping can restore their
+media bytes, but report a warning when the original links cannot be recovered.
+Paths embedded in free-form prose or shell commands are not rewritten.
+
+The whole database import is one transaction. A failed database import or media
+extraction cleans up restored files. Export publishes the archive only after it
+finishes. Limits are 4,096 ZIP members, 16 MiB per JSON file, 128 MiB per media
+file and 512 MiB total unpacked size. Invalid paths, duplicate members, links,
+and cyclic task ancestry are rejected before insertion.
+
+The importer accepts the same major version with an equal or older minor
+version; patch versions may differ. A model mismatch produces a warning.
+
 ## Plugin controls
 
 Open the peppermint sidebar and choose **Plugins**. The page lists installed

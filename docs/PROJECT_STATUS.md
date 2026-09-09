@@ -1,3 +1,19 @@
+# Latest increment — archive repairs, 2026-09-09
+
+Preceding changes committed as 164916c. Archive repairs now pass all eight
+round-trip audit checks: real step export, portable media restoration, fork ID
+remapping, and whole-import rollback are fixed. Added ZIP validation and limits,
+consistent export snapshots, and regression coverage. Legacy unmapped media
+restores with a warning when links cannot be reconstructed.
+
+Full suite: 1514 passed, one parked summary-loading failure. Isolated CLI/D-Bus
+round trip passed. The real idle daemon was reloaded and is healthy. No live
+imports were performed. The user authorized committing and pushing the repairs;
+see NEXT_SESSION.md and the
+archive evaluation report. Password masking and summary loading are unchanged.
+
+---
+
 # Latest increment — sidebar plugin management, 2026-09-09
 
 Plugins now opens inside the main window from the sidebar. It lists installed

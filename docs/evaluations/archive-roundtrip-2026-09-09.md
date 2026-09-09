@@ -1,3 +1,33 @@
+# Repair verification — 2026-09-09
+
+The four failures below are repaired. Current repeatable audit: **8 passed, 0
+failed**. The original audit is retained below as historical evidence.
+
+- Decode SQLite step arguments before export, using one read snapshot for task
+  and history tables. A concurrency regression verifies snapshot consistency.
+- Store source-reference-to-ZIP-member mappings in metadata. Extract files into
+  isolated private import directories, relocate exact references including
+  nested serialized JSON, and clean up on extraction/database failures.
+- Import all tasks in one savepoint, map parent IDs across the complete batch,
+  detach absent parents with warnings, and reject cycles before writes.
+- Bound ZIP member count and sizes; reject unsafe paths, duplicates, links,
+  and missing manifest members. Publish exports after successful completion.
+- Legacy archives without media mappings restore available bytes and warn that
+  original links could not be relocated. Do not guess links from basenames.
+
+Validation: full suite **1514 passed, one parked summary-loading failure**,
+24.22s. The archive regression files account for 31 tests in that run. All eight
+checks in scripts/check_archive_roundtrip.py passed. Compile/diff checks passed.
+An isolated dbus-run-session daemon verified CLI ExportTask/ExportAll plus
+ImportArchive/GetTask, new IDs, history, and media after original-file deletion.
+No live task data was imported. The real idle daemon was reloaded and is healthy.
+
+The pre-repair changes were committed as **164916c** at the user's request.
+The user subsequently authorized committing and pushing these archive repairs.
+Check `git log -1` and `git status -sb` for the publication state.
+
+---
+
 # Archive round-trip audit — 2026-09-09
 
 Result: **4 checks passed, 4 failed**. The archive feature is not yet a reliable

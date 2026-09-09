@@ -275,6 +275,17 @@ def _archive_tasks(tasks):
         except (TypeError, ValueError, OverflowError) as exc:
             raise ValueError("Archived task history must contain valid JSON values.") from exc
         normalized.append(task)
+    parents = {task['id']: task['parent_task_id'] for task in normalized}
+    finished = set()
+    for start in parents:
+        path = set()
+        node = start
+        while node in parents and node not in finished:
+            if node in path:
+                raise ValueError("Archived task ancestry contains a cycle.")
+            path.add(node)
+            node = parents[node]
+        finished.update(path)
     return normalized, seen
 
 
@@ -482,22 +493,23 @@ class Database:
             if not all(isinstance(task_id, int) and task_id > 0 for task_id in task_ids):
                 raise ValueError("task IDs must be positive integers.")
         conn = self.connection()
-        if task_ids is None:
-            rows = conn.execute("SELECT * FROM tasks ORDER BY id ASC").fetchall()
-        else:
-            if not task_ids:
-                return []
-            placeholders = ",".join("?" for _ in task_ids)
-            rows = conn.execute(
-                f"SELECT * FROM tasks WHERE id IN ({placeholders}) ORDER BY id ASC",
-                tuple(task_ids),
-            ).fetchall()
+        with _archive_transaction(conn):
+            if task_ids is None:
+                rows = conn.execute("SELECT * FROM tasks ORDER BY id ASC").fetchall()
+            else:
+                if not task_ids:
+                    return []
+                placeholders = ",".join("?" for _ in task_ids)
+                rows = conn.execute(
+                    f"SELECT * FROM tasks WHERE id IN ({placeholders}) ORDER BY id ASC",
+                    tuple(task_ids),
+                ).fetchall()
 
-        tasks = []
-        for row in rows:
-            task_id = int(row["id"])
-            tasks.append(self._task_with_history(conn, task_id, row))
-        return tasks
+            tasks = []
+            for row in rows:
+                task_id = int(row["id"])
+                tasks.append(self._task_with_history(conn, task_id, row))
+            return tasks
 
     @staticmethod
     def _task_with_history(conn, task_id: int, row: sqlite3.Row) -> dict:
@@ -513,6 +525,8 @@ class Database:
                 "SELECT * FROM steps WHERE task_id = ? ORDER BY id ASC", (task_id,)
             ).fetchall()
         ]
+        for step in steps:
+            step['args'] = json.loads(step['args'])
         approvals = [
             dict(approval) for approval in conn.execute(
                 "SELECT * FROM confirmations WHERE task_id = ? ORDER BY id ASC", (task_id,)
@@ -563,12 +577,24 @@ class Database:
 
     def import_task_from_portable(self, source: dict) -> int:
         """Insert one exported task and return the new task id."""
-        validated, _ = _archive_tasks([source])
-        task = validated[0]
+        return self.import_tasks_from_portable([source])[0]
+
+    def import_tasks_from_portable(self, sources: list[dict]) -> list[int]:
+        """Import an entire archive atomically and remap its task graph.
+
+        Parents outside this archive are detached, never linked to unrelated
+        local IDs. A single-task import follows the same rule.
+        """
+        tasks, _ = _archive_tasks(sources)
         conn = self.connection()
-        with conn:
-            with _archive_transaction(conn):
-                return self._insert_portable_task(conn, task)
+        with _archive_transaction(conn):
+            mapping = {}
+            for task in tasks:
+                mapping[task['id']] = self._insert_portable_task(conn, dict(task, parent_task_id=0))
+            for task in tasks:
+                conn.execute("UPDATE tasks SET parent_task_id = ? WHERE id = ?",
+                             (mapping.get(task['parent_task_id'], 0), mapping[task['id']]))
+            return [mapping[task['id']] for task in tasks]
 
     @staticmethod
     def _insert_portable_task(conn: sqlite3.Connection, task: dict) -> int:

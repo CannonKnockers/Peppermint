@@ -163,6 +163,18 @@ MANUAL_SECTIONS = (
         "not been changed since installation. Later user changes are preserved "
         "and reported. Restore affects shortcuts only; it leaves the helper installed.",
     )),
+    ("Portable archives", (
+        'Use peppermint export 3 to export task 3, or peppermint export --all for '
+        'all tasks. Use peppermint import /path/to/tasks.peppermint to restore an '
+        'archive. Imported tasks receive new IDs while keeping their history.',
+        'New archives restore referenced media into a separate imports directory '
+        'inside Peppermint’s data folder. Exact paths in recorded history are '
+        'updated; original files are not overwritten. Older archives without '
+        'media mappings show a warning if links cannot be recovered.',
+        'Fork links are preserved when both tasks are included. A parent outside '
+        'the archive is detached with a warning. Failed imports roll back database '
+        'changes and remove files restored by that attempt. Schedules are not installed.',
+    )),
     ("Plugins", (
         'Open the peppermint sidebar and choose Plugins. Each installed plugin shows '
         'whether it is enabled, disabled or not loaded, plus its available tools. '

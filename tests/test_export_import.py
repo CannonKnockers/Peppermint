@@ -25,6 +25,9 @@ class FakeImportDb:
         self.rows = []
         self.next_id = 1
 
+    def import_tasks_from_portable(self, tasks):
+        return [self.import_task_from_portable(task) for task in tasks]
+
     def import_task_from_portable(self, task):
         self.rows.append(task)
         imported = self.next_id
@@ -158,7 +161,7 @@ def test_import_archive_warns_on_model_mismatch(monkeypatch, tmp_path: Path):
         "Imported task history may reference model-specific output.",
     ]
     assert outcome["task_ids"] == [1]
-    assert db.rows == payload
+    assert db.rows == archive._archive_tasks(payload)[0]
 
 
 def test_import_archive_rejects_incompatible_version(monkeypatch, tmp_path: Path):

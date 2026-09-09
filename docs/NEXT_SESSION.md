@@ -1,3 +1,42 @@
+# Current handoff — archive repairs complete
+
+Updated 2026-09-09. User requested commit, then archive repairs. The preceding
+bug fixes, schedule controls, sidebar plugins and audit were committed as
+164916c. The archive repairs are implemented, tested, and loaded. The user has authorized
+committing and pushing them; check `git log -1` and `git status -sb` for publication state.
+
+All eight audit checks now pass. Reproduce:
+
+```sh
+PYTHONPATH=. .venv/bin/python scripts/check_archive_roundtrip.py
+.venv/bin/python -m pytest tests/test_archive_roundtrip.py tests/test_export_import.py -q
+```
+
+Full suite: 1514 passed, one parked summary-loading failure (24.22s). Compilation
+and diff checks passed. Isolated real CLI/D-Bus export/import verified restored
+media after source deletion. The live idle daemon was then reloaded and is healthy.
+No real task was imported, no timers installed, no plugin state changed.
+
+Changes: db.py decodes step arguments on export, holds a consistent read snapshot,
+imports complete task batches under one savepoint, remaps fork parents, detaches
+absent parents with warnings, and rejects cycles. archive.py adds optional media
+mappings to format 1, safe bounded extraction with path relocation, failure
+cleanup, and completed-export publication. Existing old archives remain accepted;
+unmapped media is restored with a warning rather than guessed links.
+
+Tests in tests/test_archive_roundtrip.py cover history/re-export, repeated media
+imports, JSON references, fork ancestry, transaction rollback, caller transaction
+boundaries, bad ZIP members, missing media, extraction failures, limits, version
+compatibility, tilde paths, same-database imports, and export snapshots.
+
+Read docs/evaluations/archive-roundtrip-2026-09-09.md for repaired results and the
+original failure evidence. README and the User manual describe archive behavior.
+Summary loading remains parked. Password masking is unchanged. Main UI has not
+been restarted; its previously added schedule/plugin controls still require the
+UI restart described in the older handoff. Publication is authorized for this increment.
+
+---
+
 # Current handoff — Plugins in the sidebar
 
 Updated 2026-09-09. Plugin management is implemented and uncommitted.
