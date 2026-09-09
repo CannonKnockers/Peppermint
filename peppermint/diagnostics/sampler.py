@@ -135,6 +135,7 @@ class LinuxSampler:
         self.gpu_probe = gpu_probe
         self.max_processes = max(1, min(int(max_processes), 4096))
         self.max_process_items = max(1, min(int(max_process_items), self.max_processes))
+        self.tracked_identities = ()
         self.process_budget_s = max(0.01, min(float(process_budget_s), 1.0))
         self.page_size = os.sysconf('SC_PAGE_SIZE')
         self.clock_ticks = os.sysconf('SC_CLK_TCK')
@@ -250,7 +251,9 @@ class LinuxSampler:
 
     def _processes(self):
         names, limited = self._names(self.proc, 8192)
-        pids = sorted(int(name) for name in names if name.isdecimal())
+        tracked = {pid for pid, _ticks in self.tracked_identities}
+        pids = sorted({int(name) for name in names if name.isdecimal()} | tracked,
+                      key=lambda pid: (pid not in tracked, pid))
         total = None if limited else len(pids)
         result, scanned = {}, 0
         deadline = time.monotonic() + self.process_budget_s
@@ -389,6 +392,8 @@ class LinuxSampler:
                               'write_bytes_per_s': rate(previous.get('write'), row['write'], elapsed)})
             items.sort(key=lambda row: (row['cpu_pct'] if row['cpu_pct'] is not None else -1,
                                         row['rss_bytes'] if row['rss_bytes'] is not None else -1), reverse=True)
+            tracked = set(self.tracked_identities)
+            items.sort(key=lambda row: (row['pid'], row['start_ticks']) not in tracked)
             limited = limited or len(items) > self.max_process_items
             disk_devices, interfaces = [], []
             for kind, rows, fields in (('disk', disk_devices, ('read', 'write')), ('network', interfaces, ('rx', 'tx'))):

@@ -57,7 +57,7 @@ class MetricCard(Gtk.Box):
 
 
 class DiagnosticsView(Gtk.Box):
-    """set_active follows visibility; Start intent is retained while hidden."""
+    """The host enables collection for its lifetime; Start and Pause control sampling."""
 
     def __init__(self, collector=None, monitor_factory=None):
         super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=14)
@@ -83,6 +83,9 @@ class DiagnosticsView(Gtk.Box):
         self._selected_name = ''
         self._updating_processes = False
         self._task = None
+        self.on_track = None
+        self.on_sample = None
+        self.render_enabled = True
         self._load_css()
         self._build()
         self.connect('destroy', self._on_destroy)
@@ -205,6 +208,10 @@ class DiagnosticsView(Gtk.Box):
         self.process_details = label('Select a process to inspect its latest reported measurements.')
         self.process_details.set_selectable(True)
         processes.pack_start(self.process_details, False, False, 0)
+        self.track_button = Gtk.Button(label="Begin tracking")
+        self.track_button.set_sensitive(False)
+        self.track_button.connect("clicked", self._begin_tracking)
+        processes.pack_start(self.track_button, False, False, 0)
         advanced.pack_start(processes, False, False, 0)
         advanced.reorder_child(processes, 0)
         self.errors_label = label('')
@@ -259,7 +266,7 @@ class DiagnosticsView(Gtk.Box):
         elif not self._active:
             self._stop_delivery()
             if self._wanted:
-                self.status_label.set_text('Monitoring paused while this view is hidden.')
+                self.status_label.set_text('Monitoring stopped while the workspace is inactive.')
 
     def start_monitoring(self):
         if self._destroyed:
@@ -269,7 +276,7 @@ class DiagnosticsView(Gtk.Box):
         if self._active:
             self._begin()
         else:
-            self.status_label.set_text('Monitoring will begin when this view is visible.')
+            self.status_label.set_text('Monitoring will begin when the workspace is active.')
 
     def pause_monitoring(self):
         self._wanted = False
@@ -406,9 +413,12 @@ class DiagnosticsView(Gtk.Box):
         if self._gpu_id is None and devices:
             self._gpu_id = devices[0].get('id')
             self.cards['gpu'].caption.set_text(str(devices[0].get('name', 'GPU'))[:80])
-        self._refresh_charts()
-        self._refresh_advanced(sample)
-        self._refresh_processes(sample)
+        if self.on_sample:
+            self.on_sample(sample)
+        if self.render_enabled:
+            self._refresh_charts()
+            self._refresh_advanced(sample)
+            self._refresh_processes(sample)
         if self._task:
             self.set_task_context(self._task)
         stamp = sample.get('timestamp', '')
@@ -550,6 +560,19 @@ class DiagnosticsView(Gtk.Box):
                                    + 'CPU 100% = one logical core')
         self._refresh_selected_details()
 
+    def _begin_tracking(self, *_):
+        items = ((self._last_sample or {}).get("processes") or {}).get("items", [])
+        process = next((p for p in items if (p.get("pid"), p.get("start_ticks")) == self._selected_identity), None)
+        if process and self.on_track:
+            self.on_track(process)
+
+    def set_render_visible(self, visible):
+        self.render_enabled = bool(visible)
+        if visible and self._last_sample:
+            self._refresh_charts()
+            self._refresh_advanced(self._last_sample)
+            self._refresh_processes(self._last_sample)
+
     def _process_selected(self, selection):
         if self._updating_processes:
             return
@@ -561,10 +584,12 @@ class DiagnosticsView(Gtk.Box):
 
     def _refresh_selected_details(self):
         if not self._selected_identity:
+            self.track_button.set_sensitive(False)
             return
         pid, ticks = self._selected_identity
         items = ((self._last_sample or {}).get('processes') or {}).get('items') or []
         process = next((item for item in items if (item.get('pid'), item.get('start_ticks')) == (pid, ticks)), None)
+        self.track_button.set_sensitive(process is not None)
         title = f'{self._selected_name} · PID {pid} · start {ticks}'
         if process is None:
             message = ('PID has been reused by another process.' if any(item.get('pid') == pid for item in items)

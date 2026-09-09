@@ -107,7 +107,7 @@ def test_start_delivers_worker_samples_on_main_loop_and_pause_discards_queued_de
     widget.destroy()
 
 
-def test_hidden_view_retains_intent_but_stops_until_visible_and_marks_resume_gap():
+def test_inactive_host_retains_intent_and_marks_resume_gap():
     widget = view()
     widget.set_active(True)
     widget.start_monitoring()
@@ -115,7 +115,7 @@ def test_hidden_view_retains_intent_but_stops_until_visible_and_marks_resume_gap
     flush()
     widget.set_active(False)
     assert widget._wanted and not widget.monitoring
-    assert 'hidden' in widget.status_label.get_text()
+    assert 'inactive' in widget.status_label.get_text()
     widget._monitor.callback(sample(2))
     flush()
     assert len(widget.history) == 1

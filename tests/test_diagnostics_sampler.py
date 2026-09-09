@@ -256,3 +256,14 @@ def test_process_stat_parentheses_and_invalid_stat():
     assert row['name'] == 'a ) b ( c'
     assert row['rss_bytes'] == 40960
     assert parse_process_stat('123 broken', 4096) is None
+
+
+def test_tracked_process_survives_scan_and_return_limits(fixture):
+    sampler, proc, _, _ = fixture
+    write(proc / '999/stat', process_stat(pid=999, start=44, rss=1))
+    sampler.max_processes = 1
+    sampler.max_process_items = 1
+    sampler.tracked_identities = ((999, 44),)
+    result = sampler.sample()['processes']
+    assert result['limited']
+    assert [(p['pid'], p['start_ticks']) for p in result['items']] == [(999, 44)]
