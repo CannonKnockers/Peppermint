@@ -133,4 +133,26 @@ def test_plan_renders_progress_and_survives_brief_refresh():
     assert '✓  Measure memory and GPU use' in rendered
     assert '◉  Compare workload options' in rendered
     assert '○  Verify the selected setup' in rendered
+    assert 'Recorded completion · evidence scope unavailable' in rendered
+    row.destroy()
+
+
+@pytest.mark.parametrize('scope,tool,caption', [
+    ('inspection', 'steam_game_diagnostics', 'Inspection completed'),
+    ('action', 'apt_install', 'Action completed'),
+    ('command', 'run_shell', 'Command completed'),
+])
+def test_completed_plan_shows_evidence_scope_without_claiming_verification(scope, tool, caption):
+    task = dict(id=1, idea='Investigate game', status='running', plan=[
+        {'description': 'Investigate the reported failure', 'status': 'done',
+         'evidence_kind': scope, 'evidence_tool': tool, 'evidence_step_id': 7},
+        {'description': 'Retest the original symptom', 'status': 'pending'},
+    ])
+    row = TaskRow(task, None)
+    row.expanded = True
+    row.update(task)
+    rendered = labels(row)
+    assert f'{caption} · {tool} · step 7' in rendered
+    assert '○  Retest the original symptom' in rendered
+    assert not any('Verified' in label for label in rendered)
     row.destroy()

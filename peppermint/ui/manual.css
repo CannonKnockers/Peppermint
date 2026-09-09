@@ -1,0 +1,25 @@
+.user-manual .manual-card {
+    background-color: #202726;
+    border: 1px solid alpha(#93b6a5, 0.18);
+    padding: 18px;
+}
+.user-manual .manual-heading {
+    color: #c2ecd4;
+    font-size: 18px;
+    font-weight: bold;
+    padding-bottom: 3px;
+}
+.user-manual .manual-body {
+    color: #e4ece7;
+    font-size: 14px;
+}
+.user-manual .manual-example {
+    border-top: 1px solid alpha(#93b6a5, 0.18);
+    padding-top: 12px;
+    margin-top: 4px;
+}
+.peppermint-window .user-manual button.manual-copy {
+    min-width: 54px;
+    padding: 5px 10px;
+    font-size: 12px;
+}

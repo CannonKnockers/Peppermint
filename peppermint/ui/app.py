@@ -82,7 +82,15 @@ class PeppermintApp(Gtk.Application):
         window = self._ensure_window()
         window.show_all()
         window.present_with_time(Gtk.get_current_event_time() or GLib.get_monotonic_time() // 1000)
-        window.entry.grab_focus()
+        page = window.pages.get_visible_child_name()
+        if page == "conversations":
+            window.entry.grab_focus()
+        elif page == "tasks":
+            window.task_board.search.grab_focus()
+        elif page == "diagnostics":
+            window.diagnostics.start_button.grab_focus()
+        else:
+            window.menu_button.grab_focus()
         return GLib.SOURCE_REMOVE
 
     def toggle(self) -> bool:

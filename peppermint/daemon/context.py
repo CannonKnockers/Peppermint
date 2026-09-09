@@ -15,12 +15,21 @@ def prepare_messages(messages: list[dict], schemas: list[dict]) -> list[dict]:
     active turn exceeds the budget, stop explicitly instead of silently losing
     its instructions. The full history remains in SQLite.
     """
-    system = [m for m in messages if m.get('role') == 'system']
+    system = []
     turns: list[list[dict]] = []
     for message in messages:
-        if message.get('role') == 'system' or message.get('internal'):
+        # A recovery nudge belongs to the active turn, so compaction cannot
+        # retain "Continue" while dropping the request it refers to. Other
+        # internal bookkeeping remains invisible to the model.
+        recovery = (message.get('internal') and message.get('model_visible') is True
+                    and message.get('role') == 'user')
+        if message.get('internal') and not recovery:
             continue
-        if message.get('role') == 'user' or not turns:
+        message = {k: v for k, v in message.items() if k not in ('internal', 'model_visible')}
+        if message.get('role') == 'system':
+            system.append(message)
+            continue
+        if (message.get('role') == 'user' and not recovery) or not turns:
             turns.append([])
         turns[-1].append(message)
     budget = max(1024, (config.NUM_CTX-config.MAX_RESPONSE_TOKENS)*2)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import pytest
 
 from peppermint.common.models import Status
@@ -25,12 +26,21 @@ class FakeMessage:
 class FakeLLM:
     """Returns the scripted replies in order. Records what it was asked."""
 
-    def __init__(self, replies):
+    def __init__(self, replies, decisions=None):
         self.replies = list(replies)
         self.calls = []
+        self.decisions = list(decisions or [])
+        self.decision_calls = []
         self.model = "fake"
 
-    def chat(self, messages, tools=None):
+    def chat(self, messages, tools=None, *, response_format=None):
+        if response_format is not None:
+            self.decision_calls.append(list(messages))
+            if self.decisions:
+                return self.decisions.pop(0)
+            # Existing scripted scenarios supply final answers deliberately.
+            # Routing behavior is scripted separately in test_dialogue.py.
+            return FakeMessage(content=json.dumps({'kind': 'answer', 'question': '', 'options': []}))
         self.calls.append(list(messages))
         if not self.replies:
             return FakeMessage(content="I have nothing more to do.")
@@ -235,6 +245,24 @@ def test_empty_reply_gets_one_nudge_then_fails(db):
 
     assert result.status is Status.FAILED
     assert "without an answer" in result.text
+    assert llm.calls[1][-1] == {"role": "user", "content": "Continue. Call a tool, or write the final summary."}
+    # The nudge affects this recovery call but is not a new user request on
+    # resume, nor part of the user's visible conversation.
+    assert not any(m.get("model_visible") for m in agent._history(task_id))
+
+
+def test_thinking_stays_in_tool_history_but_is_not_a_final_answer(db):
+    first = FakeMessage(tool_calls=[FakeCall("ask_user", {"question": "Which game?"})])
+    first.thinking = "Need the user's target before inspecting anything."
+    llm = FakeLLM([first, FakeMessage(content="The selected game is Example.")])
+    agent = Agent(db, llm)
+    task_id = db.add_task("Help with my game")
+    assert agent.run(task_id).status is Status.AWAITING_INPUT
+    assert not db.get_task(task_id).result
+    assert agent.resume_after_answer(task_id, "Example").status is Status.DONE
+    previous = next(m for m in llm.calls[-1] if m.get("tool_calls"))
+    assert previous["thinking"] == first.thinking
+    assert db.get_task(task_id).result == "The selected game is Example."
 
 
 @pytest.mark.parametrize("answer", [

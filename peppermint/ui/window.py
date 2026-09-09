@@ -1,159 +1,150 @@
-"""The Peppermint window: an idea box on top and a task list below."""
+"""Tasks, conversations and opt-in system diagnostics in one local workspace."""
 
 from __future__ import annotations
 
-import json
+from pathlib import Path
 
 import gi
 
 gi.require_version("Gtk", "3.0")
-from gi.repository import Gdk, GLib, Gtk  # noqa: E402
+from gi.repository import Gdk, Gio, GLib, Gtk, Pango  # noqa: E402
 
 from peppermint.common import dbus_api  # noqa: E402
+from peppermint.ui.main_menu import MainMenu, PAGES  # noqa: E402
+from peppermint.ui.manual import UserManual  # noqa: E402
 from peppermint.ui.task_row import TaskRow  # noqa: E402
-
-CSS = b"""
-.peppermint-window {
-    background: #1d2422;
-    color: #e8eeeb;
-    font-family: Cantarell, Sans;
-    font-size: 14px;
-}
-.peppermint-window headerbar {
-    background: #242c29;
-    color: #e8eeeb;
-    border-bottom: 1px solid #39443e;
-    box-shadow: none;
-    padding: 10px 14px;
-}
-.peppermint-window headerbar .subtitle { color: #a9b8b0; }
-.peppermint-window button {
-    background-image: none;
-    background-color: #34413a;
-    color: #e7efea;
-    border: 1px solid #4b5a51;
-    border-radius: 10px;
-    padding: 9px 14px;
-    box-shadow: none;
-    text-shadow: none;
-    transition: background-color 160ms ease, border-color 160ms ease;
-}
-.peppermint-window button:hover { background-color: #415248; border-color: #759b86; }
-.peppermint-window button:active { background-color: #4b6053; }
-.peppermint-window button:focus { border-color: #a7dfbc; }
-.peppermint-window button:disabled { opacity: 0.5; }
-.peppermint-window button.suggested-action {
-    background-color: #a7dfbc;
-    color: #182b20;
-    border-color: #a7dfbc;
-    font-weight: bold;
-}
-.peppermint-window button.suggested-action:hover { background-color: #c3ecd1; }
-.peppermint-window button.suggested-action:active { background-color: #89c8a1; }
-.peppermint-window entry {
-    background: #202823;
-    color: #eef4ef;
-    caret-color: #a7dfbc;
-    border: 1px solid #4a594f;
-    border-radius: 10px;
-    box-shadow: none;
-    padding: 11px 13px;
-    min-height: 20px;
-}
-.peppermint-window entry:focus { border-color: #a7dfbc; box-shadow: 0 0 0 1px #a7dfbc; }
-.peppermint-window entry selection { background: #a7dfbc; color: #182b20; }
-.peppermint-window scrolledwindow, .peppermint-window viewport,
-.peppermint-window list { background: transparent; border: none; }
-.peppermint-window scrollbar { background: transparent; }
-.peppermint-window scrollbar slider { background: #516257; border: none; border-radius: 8px; min-width: 6px; }
-.peppermint-window row { background: transparent; padding: 0; }
-.peppermint-window row:hover { background: transparent; }
-.peppermint-window .composer { background: #29352e; border: 1px solid #455b4b; border-radius: 16px; padding: 20px; }
-.peppermint-window .hero-title { font-size: 25px; font-weight: bold; color: #eff6f0; }
-.peppermint-window .muted { color: #b4c1b8; font-size: 13px; }
-.peppermint-window .section-title { font-size: 12px; font-weight: bold; color: #a8c4b2; letter-spacing: 1px; }
-.peppermint-window .task-card { background: #29312d; border: 1px solid #414c45; border-radius: 14px; }
-.peppermint-window .task-title { font-weight: bold; font-size: 15px; }
-.peppermint-window .conversation { border-top: 1px solid #414c45; padding-top: 16px; }
-.peppermint-window .message { border-radius: 10px; padding: 14px 16px; }
-.peppermint-window .message-user { background: #35453b; border-left: 3px solid #a7dfbc; }
-.peppermint-window .message-assistant { background: #252d28; border: 1px solid #3b4840; }
-.peppermint-window .speaker { color: #afd4bb; font-size: 11px; font-weight: bold; letter-spacing: 1px; }
-.peppermint-window .result { color: #e5eee7; }
-.peppermint-window .pill { padding: 5px 10px; border-radius: 12px; font-size: 11px; font-weight: bold; }
-.peppermint-window .pill-idle { background: #404b44; color: #d0dbd3; }
-.peppermint-window .pill-busy { background: #355447; color: #c0e7cc; }
-.peppermint-window .pill-wait { background: #5b5032; color: #f2d997; }
-.peppermint-window .pill-ok { background: #33503d; color: #bce6c9; }
-.peppermint-window .pill-bad { background: #5a3a39; color: #f1b9b3; }
-.peppermint-window .step-text, .peppermint-window .mono { font-family: monospace; font-size: 12px; color: #c5d4ca; }
-.peppermint-window .step-ok { color: #a7dfbc; }
-.peppermint-window .step-error, .peppermint-window .step-denied,
-.peppermint-window .error { color: #f1b9b3; }
-.peppermint-window .step-pending, .peppermint-window .step-asked { color: #ead094; }
-.peppermint-window .approval { background: #373b2b; border: 1px solid #777347; border-radius: 12px; }
-.peppermint-window .approval > border { border: none; }
-.peppermint-window .activity { color: #b4c1b8; padding: 7px 0; }
-.peppermint-window .empty-hint { color: #b4c1b8; }
-.peppermint-window .example { background: #29312d; border-color: #414c45; padding: 14px; }
-.peppermint-window .stop-button { padding: 4px 10px; background: transparent; font-size: 12px; }
-"""
+from peppermint.ui.task_board import TaskBoard  # noqa: E402
+from peppermint.ui.daemon_reader import DaemonReader  # noqa: E402
+from peppermint.ui.diagnostics_view import DiagnosticsView  # noqa: E402
 
 
 class PeppermintWindow(Gtk.ApplicationWindow):
-    def __init__(self, app):
+    def __init__(self, app, *, reader=None, diagnostics=None):
         super().__init__(application=app, title="Peppermint")
         self.set_default_size(940, 820)
         self.set_size_request(660, 560)
         self.get_style_context().add_class("peppermint-window")
         self.set_icon_name("system-run")
         self.rows: dict[int, TaskRow] = {}
-        self._detail_pending: set[int] = set()
+        self._reader = reader or DaemonReader()
+        self._destroyed = False
+        self._diagnostic_task_id = None
+        self._opening_task_id = None
+        self._diagnostics_view = diagnostics
 
         self._load_css()
         self._build()
         self._subscribe()
         self.connect("delete-event", self._on_close)
         self.connect("key-press-event", self._on_key)
+        self.connect("map", self._sync_monitor)
+        self.connect("unmap", lambda *_: self.diagnostics.set_active(False))
+        self.connect("destroy", self._on_destroy)
         self.refresh()
 
     # --- layout ------------------------------------------------------------
 
     def _load_css(self) -> None:
-        provider = Gtk.CssProvider()
-        provider.load_from_data(CSS)
-        Gtk.StyleContext.add_provider_for_screen(
-            Gdk.Screen.get_default(), provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
-        )
+        for filename in ("theme.css", "workspace.css"):
+            provider = Gtk.CssProvider()
+            provider.load_from_path(str(Path(__file__).with_name(filename)))
+            Gtk.StyleContext.add_provider_for_screen(
+                Gdk.Screen.get_default(), provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
+            )
 
     def _build(self) -> None:
-        header = Gtk.HeaderBar(title="Peppermint", show_close_button=True)
-        header.set_subtitle("Your local Linux assistant")
+        # Keep GTK's native window actions, with close at the outer right edge.
+        # Zero spacing also removes the gaps between the native title buttons.
+        header = Gtk.HeaderBar(
+            title="Peppermint", show_close_button=True, spacing=0,
+            decoration_layout=":minimize,maximize,close",
+        )
+        self.header = header
+        title_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        title = Gtk.Label(label="Peppermint")
+        title.set_width_chars(14)
+        title.get_style_context().add_class("title")
+        self.page_title = Gtk.Label(label="Tasks")
+        self.page_title.get_style_context().add_class("subtitle")
+        title_box.pack_start(title, False, False, 0)
+        title_box.pack_start(self.page_title, False, False, 0)
+        header.set_custom_title(title_box)
         self.set_titlebar(header)
 
-        refresh = Gtk.Button.new_from_icon_name("view-refresh-symbolic", Gtk.IconSize.BUTTON)
-        refresh.set_tooltip_text("Refresh conversations")
-        refresh.connect("clicked", lambda *_: self.refresh())
-        header.pack_end(refresh)
+        self.menu_button = Gtk.ToggleButton()
+        self.menu_button.set_tooltip_text("Open Peppermint sidebar")
+        self.menu_button.get_accessible().set_name("Peppermint menu")
+        self.menu_button.get_style_context().add_class("peppermint-menu-button")
+        emblem = Gio.FileIcon.new(Gio.File.new_for_path(str(Path(__file__).with_name('assets') / 'peppermint-menu.svg')))
+        menu_image = Gtk.Image.new_from_gicon(emblem, Gtk.IconSize.DIALOG)
+        menu_image.set_pixel_size(36)
+        self.menu_button.add(menu_image)
+        self.main_menu = MainMenu(self.navigate, self.new_task, self.refresh, self._on_close, self.close_menu,
+                                  self.open_recovery)
+        self.status_dot = self.main_menu.status
+        header.pack_start(self.menu_button)
 
-        self.status_dot = Gtk.Label(label="Connecting")
-        self.status_dot.get_style_context().add_class("muted")
-        header.pack_start(self.status_dot)
+        layout = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+        layout.set_margin_start(24)
+        layout.set_margin_end(24)
+        layout.set_margin_top(24)
+        layout.set_margin_bottom(16)
+        self.overlay = Gtk.Overlay()
+        self.add(self.overlay)
+        self.overlay.add(layout)
+        self.workspace = layout
 
+        self.menu_layer = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+        self.menu_layer.set_hexpand(True)
+        self.menu_layer.set_vexpand(True)
+        self.menu_revealer = Gtk.Revealer()
+        self.menu_revealer.set_transition_type(Gtk.RevealerTransitionType.SLIDE_RIGHT)
+        self.menu_revealer.set_transition_duration(280)
+        self.menu_revealer.add(self.main_menu)
+        self.menu_revealer.set_sensitive(False)
+        self.menu_revealer.connect('notify::child-revealed', self._menu_transition_finished)
+        self.menu_layer.pack_start(self.menu_revealer, False, False, 0)
+        self.menu_shade = Gtk.EventBox()
+        self.menu_shade.get_style_context().add_class('menu-shade')
+        self.menu_shade.add_events(Gdk.EventMask.BUTTON_PRESS_MASK)
+        self.menu_shade.connect('button-press-event', self._outside_menu)
+        self.menu_layer.pack_start(self.menu_shade, True, True, 0)
+        self.overlay.add_overlay(self.menu_layer)
+        self.menu_layer.show_all()
+        self.menu_layer.set_no_show_all(True)
+        self.menu_layer.hide()
+        self.menu_button.connect('toggled', self._menu_toggled)
+
+        workspace = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
+        layout.pack_start(workspace, True, True, 0)
+        self.pages = Gtk.Stack()
+        self.pages.set_transition_type(Gtk.StackTransitionType.CROSSFADE)
+        self.pages.set_transition_duration(180)
+        self.pages.set_hhomogeneous(False)
+        self.pages.set_vhomogeneous(False)
+        workspace.pack_start(self.pages, True, True, 0)
+
+        self.task_board = TaskBoard(self._query_overview, self.open_task, self.open_diagnostics, self.new_task)
+        self.pages.add_titled(self.task_board, "tasks", "Tasks")
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=18)
-        box.set_margin_start(24)
-        box.set_margin_end(24)
-        box.set_margin_top(24)
-        box.set_margin_bottom(16)
-        self.add(box)
+        self.pages.add_titled(box, "conversations", "Conversations")
+        self.diagnostics = self._diagnostics_view or DiagnosticsView()
+        self.pages.add_titled(self.diagnostics, "diagnostics", "Diagnostics")
+        self.manual = UserManual()
+        self.pages.add_titled(self.manual, "manual", "User manual")
+        self.pages.connect("notify::visible-child-name", self._sync_monitor)
+        self.pages.connect("notify::visible-child-name", self._page_changed)
 
         composer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
         composer.get_style_context().add_class("composer")
         box.pack_start(composer, False, False, 0)
         title = Gtk.Label(label="What would you like to solve?", xalign=0)
+        title.set_line_wrap(True)
+        title.set_line_wrap_mode(Pango.WrapMode.WORD_CHAR)
         title.get_style_context().add_class("hero-title")
         composer.pack_start(title, False, False, 0)
         subtitle = Gtk.Label(label="Explore solutions. Make a plan. Approve each action.", xalign=0)
+        subtitle.set_line_wrap(True)
         subtitle.get_style_context().add_class("muted")
         composer.pack_start(subtitle, False, False, 0)
 
@@ -161,6 +152,7 @@ class PeppermintWindow(Gtk.ApplicationWindow):
         entry_box.set_margin_top(6)
         composer.pack_start(entry_box, False, False, 0)
         self.entry = Gtk.Entry()
+        self.entry.set_width_chars(8)
         self.entry.set_placeholder_text("Describe an issue or something you want to do…")
         self.entry.get_style_context().add_class("idea-entry")
         self.entry.connect("activate", self._on_submit)
@@ -171,12 +163,13 @@ class PeppermintWindow(Gtk.ApplicationWindow):
         entry_box.pack_start(send, False, False, 0)
 
         section = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+        section.get_style_context().add_class("section-rule")
         label = Gtk.Label(label="CONVERSATIONS", xalign=0)
         label.get_style_context().add_class("section-title")
         section.pack_start(label, True, True, 0)
         self.conversation_count = Gtk.Label(label="0 saved locally")
         self.conversation_count.get_style_context().add_class("muted")
-        section.pack_end(self.conversation_count, False, False, 0)
+        section.pack_start(self.conversation_count, False, False, 0)
         box.pack_start(section, False, False, 0)
 
         scroller = Gtk.ScrolledWindow()
@@ -188,18 +181,74 @@ class PeppermintWindow(Gtk.ApplicationWindow):
         self.list.set_placeholder(self._placeholder())
         scroller.add(self.list)
 
-        footer = Gtk.Label(label="Runs on your computer  ·  Every action asks for permission", xalign=0)
+        footer = Gtk.Label(label="Runs locally  ·  You control actions and monitoring", xalign=0)
+        footer.set_line_wrap(True)
         footer.get_style_context().add_class("muted")
-        box.pack_start(footer, False, False, 0)
+        footer.get_style_context().add_class("footer")
+        workspace.pack_start(footer, False, False, 0)
+        # Stack destinations must be visible before OpenTask can select them,
+        # including when the application was started in the background.
+        self.pages.show_all()
+
+    def _sync_monitor(self, *_):
+        self.diagnostics.set_active(self.get_mapped() and self.pages.get_visible_child_name() == "diagnostics")
+
+    def new_task(self):
+        self.navigate("conversations")
+        self.entry.grab_focus()
+
+    def navigate(self, page: str):
+        self.close_menu()
+        self.pages.set_visible_child_name(page)
+        if page == 'manual':
+            self.manual.search.grab_focus()
+        else:
+            self.menu_button.grab_focus()
+
+    def close_menu(self):
+        self.menu_button.set_active(False)
+
+    def open_recovery(self):
+        from peppermint.cli import cmd_recover
+        cmd_recover(None)
+
+    def _menu_toggled(self, button):
+        opened = button.get_active()
+        self.workspace.set_sensitive(not opened)
+        self.menu_revealer.set_sensitive(opened)
+        if opened:
+            self.menu_layer.show()
+        self.menu_revealer.set_reveal_child(opened)
+        if opened:
+            self.main_menu.close_button.grab_focus()
+        else:
+            self.menu_button.grab_focus()
+            self._menu_transition_finished()
+        button.set_tooltip_text('Close Peppermint sidebar' if opened else 'Open Peppermint sidebar')
+
+    def _menu_transition_finished(self, *_):
+        if not self.menu_button.get_active() and not self.menu_revealer.get_child_revealed():
+            self.menu_layer.hide()
+
+    def _outside_menu(self, *_):
+        self.close_menu()
+        return True
+
+    def _page_changed(self, *_):
+        page = self.pages.get_visible_child_name()
+        self.main_menu.set_page(page)
+        self.page_title.set_text(next((title for name, title, _ in PAGES if name == page), 'Peppermint'))
 
     def _placeholder(self) -> Gtk.Widget:
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
         box.set_margin_top(20)
         box.set_margin_bottom(20)
         title = Gtk.Label(label="A calmer way to work with your computer", xalign=0)
+        title.set_line_wrap(True)
         title.get_style_context().add_class("task-title")
         box.pack_start(title, False, False, 0)
         hint = Gtk.Label(label="Start with an idea, or try one of these:", xalign=0)
+        hint.set_line_wrap(True)
         hint.get_style_context().add_class("empty-hint")
         box.pack_start(hint, False, False, 0)
         examples = [
@@ -219,6 +268,7 @@ class PeppermintWindow(Gtk.ApplicationWindow):
         return box
 
     def _use_example(self, prompt: str) -> None:
+        self.new_task()
         self.entry.set_text(prompt)
         self.entry.grab_focus()
         self.entry.set_position(-1)
@@ -226,8 +276,8 @@ class PeppermintWindow(Gtk.ApplicationWindow):
     # --- the daemon --------------------------------------------------------
 
     def _subscribe(self) -> None:
-        bus = dbus_api.session_bus()
-        bus.signal_subscribe(
+        self._bus = dbus_api.session_bus()
+        self._subscription = self._bus.signal_subscribe(
             None, dbus_api.DAEMON_IFACE, "TaskUpdated", dbus_api.DAEMON_PATH,
             None, 0, self._on_task_updated,
         )
@@ -237,65 +287,112 @@ class PeppermintWindow(Gtk.ApplicationWindow):
         GLib.idle_add(self._refresh_one, int(task_id))
 
     def _refresh_one(self, task_id: int) -> bool:
-        task = self._get_task(task_id)
-        if task is None:
+        if self._destroyed:
             return GLib.SOURCE_REMOVE
-        row = self.rows.get(task_id)
-        if row is None:
-            self.refresh()
-        else:
-            row.update(task)
+        self.refresh(details=False)
+        if task_id in self.rows or task_id == self._diagnostic_task_id:
+            self.request_detail(task_id)
         return GLib.SOURCE_REMOVE
 
-    def _get_task(self, task_id: int) -> dict | None:
-        try:
-            result = dbus_api.call_daemon("GetTask", GLib.Variant("(i)", (task_id,)),
-                                          GLib.VariantType("(s)"), timeout=10000)
-        except Exception:
-            return None
-        payload = json.loads(result.unpack()[0])
-        return payload if payload else None
-
-    def refresh(self) -> None:
-        try:
-            result = dbus_api.call_daemon("ListTasks", GLib.Variant("(i)", (40,)),
-                                          GLib.VariantType("(s)"), timeout=10000)
-        except dbus_api.DaemonNotRunning:
-            self.status_dot.set_text("● Offline")
+    def refresh(self, *, details=True) -> None:
+        if self._destroyed:
             return
-        except Exception:
-            return
+        self.task_board.reload()
+        self._reader.request("conversations", "ListTasks", GLib.Variant("(i)", (40,)), self._accept_tasks)
+        if details:
+            for task_id, row in tuple(self.rows.items()):
+                if row.expanded:
+                    self.request_detail(task_id)
+            if self._diagnostic_task_id is not None:
+                self.request_detail(self._diagnostic_task_id)
 
+    def _query_overview(self, status_filter, query, offset):
+        requested = (status_filter, query, offset)
+        def accept(report, error):
+            current = (self.task_board.filter.get_active_id(), self.task_board.search.get_text(), self.task_board.offset)
+            if requested == current:
+                self._accept_overview(report, error)
+        self._reader.request("overview", "TaskOverview", GLib.Variant("(ssii)", (status_filter, query, offset, 40)),
+                             accept)
+
+    def _accept_overview(self, report, error):
+        if self._destroyed:
+            return
+        if error:
+            self.status_dot.set_text("● Offline" if isinstance(error, dbus_api.DaemonNotRunning) else "● Read error")
+            self.task_board.show_error(error)
+        else:
+            self.status_dot.set_text("● Connected")
+            self.task_board.update_report(report)
+
+    def _accept_tasks(self, tasks, error):
+        if self._destroyed:
+            return
+        if error:
+            self.status_dot.set_text("● Offline" if isinstance(error, dbus_api.DaemonNotRunning) else "● Read error")
+            return
         self.status_dot.set_text("● Connected")
-        tasks = json.loads(result.unpack()[0])
-        self.conversation_count.set_text(f"{len(tasks)} saved locally")
-        seen = set()
-
         for index, task in enumerate(tasks):
             task_id = int(task["id"])
-            seen.add(task_id)
             row = self.rows.get(task_id)
             if row is None:
                 row = TaskRow(task, self)
                 self.rows[task_id] = row
                 self.list.insert(row, index)
                 row.show_all()
-            else:
-                # An open row needs the steps, which ListTasks does not send.
                 if row.expanded:
-                    task = self._get_task(task_id) or task
+                    self.request_detail(task_id)
+            elif not row.expanded:
                 row.update(task)
-
-        for task_id in list(self.rows):
-            if task_id not in seen:
-                self.list.remove(self.rows.pop(task_id))
+                if row.expanded:
+                    self.request_detail(task_id)
+            elif row._status != task.get("status"):
+                self.request_detail(task_id)
+        # Keep open conversations and drafts beyond the newest page. Inactive
+        # rows can be loaded again from Tasks without retaining every widget.
+        seen = {int(task['id']) for task in tasks}
+        for task_id, row in tuple(self.rows.items()):
+            if (task_id not in seen and task_id != self._opening_task_id and not row.expanded
+                    and not row._chat_draft and not row._answer_draft):
+                self.rows.pop(task_id)
+                row.destroy()
+        self.conversation_count.set_text(f"{len(self.rows)} loaded · All tasks in Tasks")
 
     def request_detail(self, task_id: int) -> None:
-        """A row opened. Fetch its steps."""
-        task = self._get_task(task_id)
+        self._reader.request(f"task:{task_id}", "GetTask", GLib.Variant("(i)", (task_id,)), self._accept_detail)
+
+    def _accept_detail(self, task, error):
+        if self._destroyed:
+            return
+        if error or not task:
+            self.status_dot.set_text("● Detail unavailable")
+            return
+        task_id = int(task["id"])
         row = self.rows.get(task_id)
-        if task and row:
+        if row is None and task_id == self._opening_task_id:
+            row = TaskRow(task, self)
+            self.rows[task_id] = row
+            self.list.insert(row, 0)
+            row.show_all()
+            self.conversation_count.set_text(f"{len(self.rows)} loaded · All tasks in Tasks")
+        if row:
+            if task_id == self._opening_task_id:
+                row.expanded = True
+                row.arrow.set_label("▾")
+                row.revealer.set_reveal_child(True)
+                self._opening_task_id = None
+                GLib.idle_add(self._scroll_to_task, task_id)
             row.update(task)
+        if task_id == self._diagnostic_task_id:
+            self.diagnostics.set_task_context(task)
+
+    def _scroll_to_task(self, task_id):
+        if not self._destroyed and task_id in self.rows:
+            row = self.rows[task_id]
+            adjustment = self.list.get_adjustment()
+            if adjustment:
+                adjustment.set_value(row.get_allocation().y)
+        return GLib.SOURCE_REMOVE
 
     # --- actions -----------------------------------------------------------
 
@@ -326,33 +423,53 @@ class PeppermintWindow(Gtk.ApplicationWindow):
     def answer(self, task_id: int, text: str) -> None:
         dbus_api.call_daemon("Answer", GLib.Variant("(is)", (task_id, text)), timeout=10000)
 
+    def retest(self, task_id: int, request_id: str, outcome: str) -> None:
+        dbus_api.call_daemon("Retest", GLib.Variant("(iss)", (task_id, request_id, outcome)), timeout=10000)
+
     def chat(self, task_id: int, text: str) -> None:
         dbus_api.call_daemon("Chat", GLib.Variant("(is)", (task_id, text)), timeout=10000)
         self.request_detail(task_id)
 
     def open_task(self, task_id: int) -> None:
-        self.refresh()
-        row = self.rows.get(task_id)
-        if row:
-            row.expand()
+        self.pages.set_visible_child_name("conversations")
+        self._opening_task_id = task_id
+        self.request_detail(task_id)
+
+    def open_diagnostics(self, task_id: int) -> None:
+        self._diagnostic_task_id = task_id
+        self.diagnostics.set_task_context(None)
+        self.pages.set_visible_child_name("diagnostics")
+        self.request_detail(task_id)
 
     def _error_dialog(self, message: str) -> None:
         dialog = Gtk.MessageDialog(transient_for=self, modal=True,
                                    message_type=Gtk.MessageType.ERROR,
                                    buttons=Gtk.ButtonsType.OK, text="Peppermint cannot reach the daemon")
         dialog.format_secondary_text(message)
+        dialog.get_style_context().add_class("peppermint-window")
         dialog.run()
         dialog.destroy()
 
     # --- window behaviour --------------------------------------------------
 
+    def _on_destroy(self, *_):
+        self._destroyed = True
+        self.diagnostics.set_active(False)
+        self._reader.close()
+        if self._subscription:
+            self._bus.signal_unsubscribe(self._subscription)
+
     def _on_close(self, *_args) -> bool:
         """The close button hides the window. The daemon keeps working."""
+        self.close_menu()
         self.hide()
         return True
 
     def _on_key(self, _widget, event) -> bool:
         if event.keyval == Gdk.KEY_Escape:
+            if self.menu_button.get_active():
+                self.close_menu()
+                return True
             self.hide()
             return True
         return False

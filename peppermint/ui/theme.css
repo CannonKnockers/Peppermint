@@ -1,0 +1,219 @@
+/* Material surfaces stay quiet under text. Raised edges use a dark outer
+ * outline and a light inner bevel; all controls have square corners.
+ * URLs are relative to this installed stylesheet, never the working folder. */
+.peppermint-window {
+    background-color: #151719;
+    background-image: linear-gradient(rgba(17, 20, 22, 0.78), rgba(17, 20, 22, 0.78)), url("assets/textures/earth.png");
+    background-size: auto, 480px 480px;
+    color: #f0f3f1;
+    font-family: Cantarell, Sans;
+    font-size: 14px;
+    border-radius: 0;
+}
+.peppermint-window decoration {
+    border-radius: 0;
+    border: 1px solid #050708;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+.peppermint-window headerbar {
+    background-color: #3c4245;
+    background-image: linear-gradient(rgba(67, 76, 79, 0.60), rgba(39, 44, 46, 0.72)), url("assets/textures/metal.png");
+    background-size: auto, 480px 480px;
+    color: #f5f7f5;
+    border-radius: 0;
+    border: none;
+    border-bottom: 2px solid #080b0c;
+    box-shadow: inset 0 1px #9aa8a7, inset 0 -1px #667574;
+    padding: 0 0 0 14px;
+    min-height: 60px;
+}
+.peppermint-window headerbar .title { font-weight: bold; letter-spacing: 1px; }
+.peppermint-window headerbar .subtitle { color: #d0d9d4; }
+/* The entire top-right corner is a native close target when maximized.
+ * Keep the other header actions inset without padding the window controls. */
+.peppermint-window headerbar button.peppermint-menu-button {
+    margin: 7px 0;
+    padding: 3px 6px;
+    min-width: 36px;
+    min-height: 36px;
+}
+.peppermint-window headerbar button.titlebutton {
+    min-width: 42px;
+    min-height: 60px;
+    margin: 0;
+    padding: 0;
+    border-width: 0 0 0 1px;
+}
+.peppermint-window headerbar separator.titlebutton { min-width: 0; margin: 0; opacity: 0; }
+.peppermint-window button {
+    background-color: #444b4e;
+    background-image: linear-gradient(rgba(82, 94, 98, 0.48), rgba(38, 45, 48, 0.66)), url("assets/textures/metal.png");
+    background-size: auto, 280px 280px;
+    background-position: center;
+    color: #f5f7f5;
+    border: 2px solid #080c0d;
+    border-radius: 0;
+    padding: 9px 14px;
+    box-shadow: inset 0 1px #aab7b5, inset 1px 0 rgba(199, 214, 209, 0.4), inset 0 -2px #232b2d, 0 1px #667573;
+    text-shadow: none;
+    outline-color: #c4f5dc;
+    outline-style: solid;
+    outline-width: 0;
+    outline-offset: -5px;
+    transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+.peppermint-window button:hover {
+    border-color: #b1e6cd;
+    box-shadow: inset 0 1px #e0f3e9, inset 0 -2px #283b32, 0 1px #0b1110;
+}
+.peppermint-window button:active {
+    box-shadow: inset 0 3px 4px rgba(0, 0, 0, 0.6), inset 0 -1px #8daba0;
+}
+.peppermint-window button:focus { outline-width: 2px; }
+.peppermint-window button:disabled { opacity: 0.45; }
+.peppermint-window button.suggested-action {
+    background-color: #b6dfc5;
+    background-image: linear-gradient(rgba(142, 219, 179, 0.60), rgba(112, 190, 148, 0.67)), url("assets/textures/bone.png");
+    background-size: auto, 240px 240px;
+    color: #11291e;
+    font-weight: bold;
+    border-color: #0a1812;
+    outline-color: #163d29;
+    box-shadow: inset 0 1px #f0fff5, inset 1px 0 #d2f9df, inset 0 -2px #5e8e71, 0 1px #9bbcac;
+}
+.peppermint-window button.suggested-action:hover { border-color: #e6fff0; }
+.peppermint-window button.suggested-action:active {
+    box-shadow: inset 0 3px 4px rgba(22, 57, 37, 0.55), inset 0 -1px #e5f8e9;
+}
+.peppermint-window button.choice,
+.peppermint-window button.example {
+    background-color: #444842;
+    background-image: linear-gradient(rgba(58, 66, 61, 0.40), rgba(37, 43, 39, 0.64)), url("assets/textures/wood.png");
+    background-size: auto, 360px 360px;
+    padding: 13px 16px;
+}
+.peppermint-window button.stop-button,
+.peppermint-window button.deny-button {
+    background-color: #493a33;
+    background-image: linear-gradient(rgba(81, 52, 43, 0.62), rgba(47, 34, 29, 0.75)), url("assets/textures/earth.png");
+    background-size: auto, 240px 240px;
+    color: #ffe0cd;
+    outline-color: #ffdfc8;
+    box-shadow: inset 0 1px #c8a68b, inset 0 -2px #261b17, 0 1px #796256;
+}
+.peppermint-window button.stop-button:hover,
+.peppermint-window button.deny-button:hover { border-color: #f6c6a6; }
+.peppermint-window button.stop-button:active,
+.peppermint-window button.deny-button:active {
+    box-shadow: inset 0 3px 4px rgba(0, 0, 0, 0.6), inset 0 -1px #c8a68b;
+}
+.peppermint-window button.stop-button { padding: 4px 10px; font-size: 12px; }
+.peppermint-window entry {
+    background-color: #141b1c;
+    background-image: linear-gradient(rgba(10, 19, 20, 0.90), rgba(10, 19, 20, 0.90)), url("assets/textures/metal.png");
+    background-size: auto, 400px 400px;
+    color: #f0f8f2;
+    caret-color: #b5f2cd;
+    border: 2px solid #080c0d;
+    border-bottom-color: #7e938b;
+    border-radius: 0;
+    box-shadow: inset 0 2px 3px rgba(0, 0, 0, 0.65);
+    padding: 11px 13px;
+    min-height: 20px;
+}
+.peppermint-window entry:focus { border-color: #b5f2cd; }
+.peppermint-window entry selection { background: #b5f2cd; color: #11291e; }
+.peppermint-window scrolledwindow, .peppermint-window viewport,
+.peppermint-window list { background: transparent; border: none; }
+.peppermint-window scrollbar { background: #121719; border-left: 1px solid #080b0c; }
+.peppermint-window scrollbar slider {
+    background: #778c83;
+    border: 1px solid #111b16;
+    border-top-color: #bbd7c9;
+    border-radius: 0;
+    min-width: 7px;
+}
+.peppermint-window scrollbar slider:hover { background: #a7d7be; }
+.peppermint-window row, .peppermint-window row:hover { background: transparent; padding: 0; }
+.peppermint-window .composer {
+    background-color: #3c4648;
+    background-image: linear-gradient(rgba(55, 76, 71, 0.70), rgba(42, 55, 55, 0.77)), url("assets/textures/metal.png");
+    background-size: auto, 480px 480px;
+    border: 2px solid #070c0a;
+    border-radius: 0;
+    box-shadow: inset 0 1px #c2e2d1, inset 0 -1px #6d887b, 0 1px #65756d;
+    padding: 20px;
+}
+.peppermint-window .hero-title { font-size: 25px; font-weight: bold; color: #f4fff7; }
+.peppermint-window .muted { color: #c5cfca; font-size: 13px; }
+.peppermint-window .section-title { font-size: 12px; font-weight: bold; color: #c2ecd4; letter-spacing: 1px; }
+.peppermint-window .section-rule { border-bottom: 2px solid #060b08; box-shadow: 0 1px #7a9185; padding-bottom: 10px; }
+.peppermint-window .task-card {
+    background-color: #363a3b;
+    background-image: linear-gradient(rgba(48, 56, 56, 0.82), rgba(36, 42, 43, 0.89)), url("assets/textures/wood.png");
+    background-size: auto, 520px 520px;
+    border: 2px solid #080b0c;
+    border-radius: 0;
+    box-shadow: inset 0 1px #acb7b2, inset 0 -1px #596a63, 0 1px #52645a;
+}
+.peppermint-window .task-title { font-weight: bold; font-size: 15px; color: #f1f6f3; }
+.peppermint-window .conversation {
+    border-top: 2px solid #0b100e;
+    box-shadow: inset 0 1px #788b7f;
+    padding-top: 16px;
+}
+.peppermint-window .message { border-radius: 0; padding: 14px 16px; }
+.peppermint-window .message-user {
+    background-color: #52675c;
+    background-image: linear-gradient(rgba(45, 81, 62, 0.83), rgba(45, 70, 56, 0.85)), url("assets/textures/bone.png");
+    background-size: auto, 420px 420px;
+    border: 2px solid #0d1c14;
+    border-left: 4px solid #bcf2d1;
+    box-shadow: inset 0 1px #8eae9b, inset 0 -1px #2b4235;
+}
+.peppermint-window .message-assistant {
+    background-color: #1d2426;
+    background-image: linear-gradient(rgba(21, 30, 32, 0.90), rgba(21, 30, 32, 0.90)), url("assets/textures/metal.png");
+    background-size: auto, 480px 480px;
+    border: 2px solid #080d0e;
+    box-shadow: inset 0 1px #647973, 0 1px #718079;
+}
+.peppermint-window .speaker { color: #d0f6df; font-size: 11px; font-weight: bold; letter-spacing: 1px; }
+.peppermint-window .result { color: #f1f5f2; }
+.peppermint-window .pill {
+    padding: 5px 10px;
+    border: 1px solid #0c1711;
+    border-radius: 0;
+    box-shadow: inset 0 1px rgba(242, 255, 247, 0.55);
+    font-size: 11px;
+    font-weight: bold;
+}
+.peppermint-window .pill-idle { background: #4b5450; color: #f1f6f3; }
+.peppermint-window .pill-busy { background: #b5dfcb; color: #163526; }
+.peppermint-window .pill-wait { background: #e5d3a2; color: #3d3216; }
+.peppermint-window .pill-ok { background: #b4dbc2; color: #163526; }
+.peppermint-window .pill-bad { background: #e0b2a6; color: #471f19; }
+.peppermint-window .step-text, .peppermint-window .mono { font-family: monospace; font-size: 12px; color: #d1dfd7; }
+.peppermint-window .step-ok { color: #bef0d2; }
+.peppermint-window .step-error, .peppermint-window .step-denied,
+.peppermint-window .error { color: #ffd0bb; }
+.peppermint-window .step-pending, .peppermint-window .step-asked { color: #f0dcac; }
+.peppermint-window .approval {
+    background-color: #d6d3bd;
+    background-image: linear-gradient(rgba(223, 226, 205, 0.48), rgba(194, 204, 180, 0.57)), url("assets/textures/bone.png");
+    background-size: auto, 360px 360px;
+    color: #222c24;
+    border: 2px solid #080e09;
+    border-radius: 0;
+    box-shadow: inset 0 1px #ffffec, inset 0 -1px #86927a, 0 1px #a6b89f;
+}
+.peppermint-window .approval > border { border: none; }
+.peppermint-window .approval .mono { color: #2e3a31; }
+.peppermint-window .activity { color: #c5cfca; padding: 7px 0; }
+.peppermint-window .empty-hint { color: #c5cfca; }
+.peppermint-window .footer { border-top: 2px solid #080d0a; box-shadow: inset 0 1px #62746b; padding-top: 12px; }
+.peppermint-window button.peppermint-menu-button:checked {
+    color: #c4f5dc;
+    border-color: #b1e6cd;
+    box-shadow: inset 0 2px 4px #15231c, inset 0 -1px #7f9b8d;
+}

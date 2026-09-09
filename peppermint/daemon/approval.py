@@ -17,6 +17,10 @@ Two things can go wrong between the question and the click:
 
 An approval also expires. An old question was asked about an old machine
 state, so the answer to it is no longer trustworthy.
+
+Target fingerprints use the filesystem's nanosecond modification/change times.
+Approvals recorded with older target metadata require a fresh approval instead
+of silently retaining their weaker timestamp check. Existing rows are not changed.
 """
 
 from __future__ import annotations
@@ -31,7 +35,8 @@ from peppermint import config
 from peppermint.daemon import safety
 
 # Arguments that name a target on disk. Their fingerprints get recorded.
-PATH_ARGUMENTS = ("path", "src", "dst", "target", "file", "directory")
+PATH_ARGUMENTS = ("path", "src", "dst", "target", "file", "directory", "log_path")
+TARGET_FINGERPRINT_VERSION = 2
 
 
 def canonical_args(args: dict) -> str:
@@ -52,12 +57,13 @@ def make_token(task_id: int, tool: str, args: dict) -> str:
 
 def _describe_target(raw: str) -> dict:
     """What the target looks like right now."""
+    record = {"given": str(raw), "fingerprint_version": TARGET_FINGERPRINT_VERSION}
     try:
         resolved = safety.resolve(raw)
     except (OSError, RuntimeError, ValueError):
-        return {"given": str(raw), "state": "unreadable"}
+        return dict(record, state="unreadable")
 
-    record = {"given": str(raw), "resolved": str(resolved)}
+    record["resolved"] = str(resolved)
     try:
         info = os.lstat(resolved)
     except FileNotFoundError:
@@ -72,7 +78,11 @@ def _describe_target(raw: str) -> dict:
         "directory" if os.path.isdir(resolved) else "file")
     record["size"] = info.st_size
     record["inode"] = info.st_ino
-    record["mtime"] = int(info.st_mtime)
+    record["device"] = info.st_dev
+    record["mtime_ns"] = info.st_mtime_ns
+    # Restoring a file's mtime after rewriting it still changes its ctime.
+    # These remain filesystem metadata checks, not a content hash or lock.
+    record["ctime_ns"] = info.st_ctime_ns
     return record
 
 
@@ -111,18 +121,24 @@ def compare_targets(recorded: str, current: str) -> str:
         after = json.loads(current or "{}")
     except ValueError:
         return "Peppermint cannot read what the target looked like before."
+    if (not isinstance(before, dict) or not isinstance(after, dict)
+            or any(not isinstance(target, dict) for target in [*before.values(), *after.values()])):
+        return "Peppermint cannot read what the target looked like before."
 
     changes = []
     for name in sorted(set(before) | set(after)):
         old = before.get(name, {})
         new = after.get(name, {})
+        if old and old.get("fingerprint_version") != TARGET_FINGERPRINT_VERSION:
+            changes.append(f"`{name}` was recorded with older target checks; request a fresh approval")
+            continue
         if old == new:
             continue
         if old.get("resolved") != new.get("resolved"):
             changes.append(f"`{name}` now points somewhere else")
         elif old.get("state") != new.get("state"):
             changes.append(f"`{name}` changed from {old.get('state')} to {new.get('state')}")
-        elif old.get("inode") != new.get("inode"):
+        elif (old.get("inode"), old.get("device")) != (new.get("inode"), new.get("device")):
             changes.append(f"`{name}` is a different file now")
         else:
             changes.append(f"`{name}` changed since Peppermint asked")

@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 
 from peppermint import config
 from peppermint.common.models import Confirmation, Status, Step, Task
+from peppermint.common.retest import pending_retest
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS tasks (
@@ -225,6 +226,8 @@ class Database:
             task.plan = self.get_plan(task_id)
             task.steps = self.get_steps(task_id)
             task.pending = self.pending_confirmation(task_id)
+            if task.status == Status.AWAITING_INPUT.value:
+                task.retest = pending_retest(task.steps, task.plan)
         return task
 
     def list_tasks(self, limit: int = 50) -> list[Task]:
@@ -237,7 +240,71 @@ class Database:
             task.plan = self.get_plan(task.id)
             if Status(task.status).needs_user:
                 task.pending = self.pending_confirmation(task.id)
+            if task.status == Status.AWAITING_INPUT.value:
+                task.retest = pending_retest(self.get_steps(task.id), task.plan)
         return tasks
+
+    def task_overview(self, status_filter: str = "all", query: str = "",
+                      offset: int = 0, limit: int = 40) -> dict:
+        """Page task summaries and whole-database counts in one read snapshot.
+
+        The overview carries saved plans but never loads conversation history,
+        step logs, or approval controls. Open a task for its current details.
+        """
+        filters = {
+            "all": (),
+            "active": (Status.QUEUED.value, Status.PLANNING.value, Status.RUNNING.value),
+            "waiting": (Status.AWAITING_CONFIRMATION.value, Status.AWAITING_INPUT.value),
+            "finished": (Status.DONE.value, Status.FAILED.value, Status.CANCELLED.value),
+            "failed": (Status.FAILED.value,),
+        }
+        if not isinstance(status_filter, str) or status_filter not in filters:
+            raise ValueError("Task filter must be all, active, waiting, finished, or failed.")
+        if not isinstance(query, str):
+            raise ValueError("Task search must be text.")
+        if any(not isinstance(value, int) or isinstance(value, bool) for value in (offset, limit)):
+            raise ValueError("Task offset and limit must be integers.")
+        query = query[:240]
+        offset = min(max(0, offset), 2**63 - 1)
+        limit = min(100, max(1, limit))
+        clauses, params = [], []
+        if filters[status_filter]:
+            clauses.append("t.status IN (" + ",".join("?" for _ in filters[status_filter]) + ")")
+            params.extend(filters[status_filter])
+        conn = self.connection()
+        if query:
+            # SQLite's built-in LOWER/NOCASE only fold ASCII. Keep application
+            # names searchable across Unicode while treating %, _ and \\ literally.
+            conn.create_function("peppermint_casefold", 1, str.casefold, deterministic=True)
+            escaped = query.casefold().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            clauses.append("peppermint_casefold(t.idea) LIKE ? ESCAPE '\\'")
+            params.append("%" + escaped + "%")
+        where = " WHERE " + " AND ".join(clauses) if clauses else ""
+        owns_snapshot = not conn.in_transaction
+        if owns_snapshot:
+            conn.execute("BEGIN")
+        try:
+            counts = {status.value: 0 for status in Status}
+            for row in conn.execute("SELECT status, COUNT(*) AS count FROM tasks GROUP BY status"):
+                counts[row["status"]] = row["count"]
+            matched = conn.execute("SELECT COUNT(*) FROM tasks t" + where, params).fetchone()[0]
+            rows = conn.execute(
+                "SELECT t.*, p.steps AS overview_plan FROM tasks t "
+                "LEFT JOIN task_plans p ON p.task_id = t.id" + where +
+                " ORDER BY t.updated_at DESC, t.id DESC LIMIT ? OFFSET ?",
+                [*params, limit, offset],
+            ).fetchall()
+            tasks = []
+            for row in rows:
+                task = self._row_to_task(row)
+                task.plan = json.loads(row["overview_plan"]) if row["overview_plan"] else []
+                tasks.append(task.to_dict())
+            return {"tasks": tasks, "counts": counts, "total": sum(counts.values()),
+                    "matched": matched, "offset": offset, "limit": limit,
+                    "has_more": offset + len(tasks) < matched}
+        finally:
+            if owns_snapshot:
+                conn.rollback()  # End this read-only snapshot without committing caller writes.
 
     def next_queued(self) -> Task | None:
         conn = self.connection()

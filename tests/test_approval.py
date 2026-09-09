@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+import json
+import os
+from types import SimpleNamespace
 
 import pytest
 
@@ -115,6 +118,96 @@ def test_an_unchanged_target_reports_nothing(home_tmp):
     path.write_text("same")
     before = approval.target_fingerprint({"path": str(path)})
     assert approval.compare_targets(before, approval.target_fingerprint({"path": str(path)})) == ""
+
+
+@pytest.mark.parametrize("argument", ["path", "log_path"])
+def test_same_size_rewrite_within_one_second_invalidates_approval(home_tmp, argument):
+    path = home_tmp / "steam-480.log"
+    path.write_text("original")
+    second = path.stat().st_mtime_ns // 1_000_000_000 * 1_000_000_000
+    os.utime(path, ns=(second, second + 100_000_000))
+    args = {argument: str(path)}
+    row = make_row(1, "steam_game_diagnostics", args)
+    before = path.stat()
+    path.write_text("replaced")
+    os.utime(path, ns=(second, second + 200_000_000))
+    after = path.stat()
+    assert before.st_size == after.st_size
+    assert int(before.st_mtime) == int(after.st_mtime)
+    assert before.st_mtime_ns != after.st_mtime_ns
+    with pytest.raises(approval.ApprovalError, match="target changed"):
+        approval.verify(row, "steam_game_diagnostics", args, 1)
+
+
+def test_restored_mtime_still_notices_changed_ctime(home_tmp, monkeypatch):
+    path = home_tmp / "notes.txt"
+    path.write_text("original")
+    args = {"path": str(path)}
+    row = make_row(1, "delete_file", args)
+    original_stat = os.lstat
+    info = original_stat(path)
+
+    def changed_stat(target, *args, **kwargs):
+        measured = original_stat(target, *args, **kwargs)
+        if os.fspath(target) != str(path):
+            return measured
+        # A deterministic filesystem sample of a same-size rewrite followed by
+        # restoring mtime. Only ctime differs, including its subsecond portion.
+        values = {name: getattr(info, name) for name in (
+            "st_mode", "st_size", "st_ino", "st_dev", "st_mtime", "st_mtime_ns", "st_ctime_ns")}
+        values["st_ctime_ns"] += 1
+        return SimpleNamespace(**values)
+
+    monkeypatch.setattr(approval.os, "lstat", changed_stat)
+    with pytest.raises(approval.ApprovalError, match="target changed"):
+        approval.verify(row, "delete_file", args, 1)
+
+
+def test_reading_an_unchanged_log_does_not_invalidate_approval(home_tmp):
+    path = home_tmp / "steam-480.log"
+    path.write_text("same launch output")
+    args = {"app_id": "480", "log_path": str(path)}
+    row = make_row(1, "steam_game_diagnostics", args)
+    assert path.read_text() == "same launch output"
+    approval.verify(row, "steam_game_diagnostics", args, 1)
+
+
+@pytest.mark.parametrize("exists", [False, True])
+def test_legacy_target_fingerprint_requires_fresh_approval(home_tmp, exists):
+    path = home_tmp / "steam-480.log"
+    if exists:
+        path.write_text("same")
+    args = {"log_path": str(path)}
+    row = make_row(1, "steam_game_diagnostics", args)
+    legacy = json.loads(row["fingerprint"])
+    target = legacy["log_path"]
+    target.pop("fingerprint_version")
+    if exists:
+        target["mtime"] = target.pop("mtime_ns") // 1_000_000_000
+        target.pop("ctime_ns")
+        target.pop("device")
+    row["fingerprint"] = json.dumps(legacy)
+    with pytest.raises(approval.ApprovalError, match="older target checks; request a fresh approval"):
+        approval.verify(row, "steam_game_diagnostics", args, 1)
+    # Verification neither rewrites the stored metadata nor changes the target.
+    assert row["fingerprint"] == json.dumps(legacy)
+    assert path.exists() == exists
+    if exists:
+        assert path.read_text() == "same"
+
+
+def test_approval_with_no_filesystem_targets_needs_no_metadata_upgrade():
+    args = {"app_id": "480"}
+    row = make_row(1, "steam_game_diagnostics", args, fingerprint="{}")
+    approval.verify(row, "steam_game_diagnostics", args, 1)
+
+
+@pytest.mark.parametrize("fingerprint", ['[]', '{"path":null}', '{"path":"old"}'])
+def test_malformed_stored_fingerprint_is_refused(home_tmp, fingerprint):
+    args = {"path": str(home_tmp / "notes.txt")}
+    row = make_row(1, "delete_file", args, fingerprint=fingerprint)
+    with pytest.raises(approval.ApprovalError, match="cannot read"):
+        approval.verify(row, "delete_file", args, 1)
 
 
 # --- verification ---------------------------------------------------------

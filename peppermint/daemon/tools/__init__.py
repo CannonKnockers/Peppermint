@@ -1,6 +1,6 @@
 """Import every tool module, so the registry fills up."""
 
-from peppermint.daemon.tools import files, interaction, packages, performance, planning, scheduling, settings, shell, web  # noqa: F401
+from peppermint.daemon.tools import files, gaming, interaction, packages, performance, planning, reference, retest, scheduling, settings, shell, web  # noqa: F401
 from peppermint.daemon.tools.registry import (  # noqa: F401
     Ask,
     Confirm,

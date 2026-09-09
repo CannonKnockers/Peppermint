@@ -44,7 +44,7 @@ class Job:
     """One unit of work for the worker thread."""
 
     def __init__(self, kind: str, task_id: int, payload=None):
-        self.kind = kind          # run | confirm | answer | chat
+        self.kind = kind          # run | confirm | answer | retest | chat
         self.task_id = task_id
         self.payload = payload
 
@@ -152,6 +152,10 @@ class Daemon:
             tasks = [t.to_dict() for t in self.db.list_tasks(limit)]
             return GLib.Variant("(s)", (json.dumps(tasks),))
 
+        if method == "TaskOverview":
+            overview = self.db.task_overview(args[0], args[1], args[2], args[3])
+            return GLib.Variant("(s)", (json.dumps(overview),))
+
         if method == "GetTask":
             task = self.db.get_task(args[0])
             return GLib.Variant("(s)", (task.to_json() if task else "null",))
@@ -173,6 +177,13 @@ class Daemon:
 
         if method == "Answer":
             self.jobs.put(Job("answer", int(args[0]), args[1]))
+            return None
+
+        if method == "Retest":
+            task_id, request_id, outcome = int(args[0]), args[1], args[2]
+            if outcome not in dbus_api.RETEST_OUTCOMES:
+                raise ValueError("Retest outcome must be passed, failed, or not_tested.")
+            self.jobs.put(Job("retest", task_id, (request_id, outcome)))
             return None
 
         if method == "Chat":
@@ -289,6 +300,9 @@ class Daemon:
             result = self.agent.resume_after_confirm(job.task_id, approved, confirmation_id)
         elif job.kind == "answer":
             result = self.agent.resume_after_answer(job.task_id, str(job.payload))
+        elif job.kind == "retest":
+            request_id, outcome = job.payload
+            result = self.agent.resume_after_retest(job.task_id, request_id, outcome)
         elif job.kind == "chat":
             result = self.agent.follow_up(job.task_id, str(job.payload))
         else:

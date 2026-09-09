@@ -11,18 +11,21 @@ say() { printf '\n\033[1m%s\033[0m\n' "$*"; }
 say "1. Check the system packages"
 missing=()
 for typelib in Gtk-3.0 Notify-0.7; do
-    $PY - "$typelib" <<'EOF' || missing+=("$1")
+    $PY - "$typelib" <<'EOF' || missing+=("$typelib")
 import sys, gi
 name, version = sys.argv[1].split("-")
 gi.require_version(name, version)
 EOF
 done
+if ! "$PY" -c 'import gi; gi.require_foreign("cairo")' >/dev/null 2>&1; then
+    missing+=("python3-gi-cairo")
+fi
 if [ ${#missing[@]} -gt 0 ]; then
     echo "These packages are missing: ${missing[*]}"
-    echo "Install them with: sudo apt install python3-gi gir1.2-gtk-3.0 gir1.2-notify-0.7"
+    echo "Install them with: sudo apt install python3-gi python3-gi-cairo gir1.2-gtk-3.0 gir1.2-notify-0.7"
     exit 1
 fi
-echo "GTK 3 and libnotify are ready."
+echo "GTK 3, Cairo and libnotify are ready."
 
 say "2. Make the virtual environment"
 # The system python must be used. It owns the `gi` module.

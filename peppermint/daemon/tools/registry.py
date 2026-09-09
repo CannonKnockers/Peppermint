@@ -68,6 +68,10 @@ class Tool:
 
 REGISTRY: dict[str, Tool] = {}
 
+# These only ask, track this conversation, or search bundled reference text.
+# They cannot inspect the user's computer or execute a proposed remedy.
+INTERNAL_TOOLS = frozenset({"ask_user", "set_plan", "linux_reference", "request_retest"})
+
 
 def tool(name: str, description: str, parameters: dict):
     """Register a function as a tool."""
@@ -129,7 +133,7 @@ def call(name: str, args: dict, ctx: Context):
     if missing:
         raise ToolError(f"`{name}` needs these arguments: {missing}.")
 
-    if ctx.require_approval and not ctx.approved and name not in ("ask_user", "set_plan"):
+    if ctx.require_approval and not ctx.approved and name not in INTERNAL_TOOLS:
         return Confirm(
             description=f"{name}\n{json.dumps(args, indent=2, ensure_ascii=False)}",
             reason="Every computer action requires your permission. Allow runs this exact action once.",

@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48">
+  <defs>
+    <linearGradient id="rim" x2="0" y2="1">
+      <stop stop-color="#d5ffe1"/>
+      <stop offset="1" stop-color="#69b889"/>
+    </linearGradient>
+    <linearGradient id="mint" x2="1" y2="1">
+      <stop stop-color="#80ce91"/>
+      <stop offset="1" stop-color="#287858"/>
+    </linearGradient>
+    <path id="stripe" d="M24 24 C16 19 13 12 19 6 A19 19 0 0 1 31 6 C21 10 19 16 24 24Z"/>
+  </defs>
+  <circle cx="24" cy="25" r="22" fill="#0c2118"/>
+  <circle cx="24" cy="24" r="21" fill="url(#rim)"/>
+  <circle cx="24" cy="24" r="18.5" fill="#eff6dc"/>
+  <g fill="url(#mint)">
+    <use href="#stripe"/>
+    <use href="#stripe" transform="rotate(60 24 24)"/>
+    <use href="#stripe" transform="rotate(120 24 24)"/>
+    <use href="#stripe" transform="rotate(180 24 24)"/>
+    <use href="#stripe" transform="rotate(240 24 24)"/>
+    <use href="#stripe" transform="rotate(300 24 24)"/>
+  </g>
+  <circle cx="24" cy="24" r="18.5" fill="none" stroke="#347453" stroke-width=".7"/>
+  <path d="M10 16 A17 17 0 0 1 31 9" fill="none" stroke="#fff" stroke-width="1.2" opacity=".55" stroke-linecap="round"/>
+</svg>

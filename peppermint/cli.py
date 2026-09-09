@@ -5,6 +5,7 @@
     peppermint show 3                         show one task with its steps
     peppermint allow 3 / peppermint deny 3         answer an approval request
     peppermint answer 3 "the blue one"        answer a question
+    peppermint retest 3 REQUEST_ID passed     report a requested retest outcome
     peppermint chat 3 "now do the same for Documents"
     peppermint watch                          follow the tasks live
     peppermint health                         check the daemon and the model
@@ -93,7 +94,15 @@ def cmd_show(args) -> int:
         print(f"\n{BOLD}Peppermint asks for approval:{RESET} {task['pending']['description']}")
         print(f"Allow it with:  peppermint allow {task['id']}")
         print(f"Refuse it with: peppermint deny {task['id']}")
-    if task["status"] == Status.AWAITING_INPUT.value and task.get("question"):
+    if task["status"] == Status.AWAITING_INPUT.value and task.get("retest"):
+        retest = task["retest"]
+        print(f"\n{BOLD}Peppermint asks you to retest:{RESET} {retest['question']}")
+        print(f"Original symptom: {retest['symptom']}")
+        print(f"Plan step: {retest['target_description']}")
+        print("Report what you observed:")
+        for outcome in dbus_api.RETEST_OUTCOMES:
+            print(f"  peppermint retest {task['id']} {retest['request_id']} {outcome}")
+    elif task["status"] == Status.AWAITING_INPUT.value and task.get("question"):
         print(f"\n{BOLD}Peppermint asks:{RESET} {task['question']}")
         print(f"Answer with: peppermint answer {task['id']} \"your answer\"")
     if task["result"]:
@@ -112,6 +121,12 @@ def cmd_confirm(args, approved: bool) -> int:
 def cmd_answer(args) -> int:
     dbus_api.call_daemon("Answer", GLib.Variant("(is)", (args.id, " ".join(args.text))))
     print(f"Task {args.id} continues.")
+    return 0
+
+
+def cmd_retest(args) -> int:
+    dbus_api.call_daemon("Retest", GLib.Variant("(iss)", (args.id, args.request_id, args.outcome)))
+    print(f"Task {args.id}: retest outcome submitted ({args.outcome}).")
     return 0
 
 
@@ -210,6 +225,15 @@ def cmd_toggle(args) -> int:
     return 0
 
 
+def cmd_recover(args) -> int:
+    """Launch recovery independently from the daemon and normal window."""
+    import subprocess
+    subprocess.Popen([sys.executable, '-m', 'peppermint.recovery.app'],
+                     start_new_session=True, stdin=subprocess.DEVNULL,
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="peppermint", description="Peppermint, your helper on Linux Mint.")
     subs = parser.add_subparsers(dest="command")
@@ -239,6 +263,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("text", nargs="+")
     p.set_defaults(func=cmd_answer)
 
+    p = subs.add_parser("retest", help="report the result of a requested retest")
+    p.add_argument("id", type=int)
+    p.add_argument("request_id", help="request ID shown by peppermint show")
+    p.add_argument("outcome", choices=dbus_api.RETEST_OUTCOMES)
+    p.set_defaults(func=cmd_retest)
+
     p = subs.add_parser("chat", help="send a follow-up message")
     p.add_argument("id", type=int)
     p.add_argument("text", nargs="+")
@@ -264,6 +294,9 @@ def build_parser() -> argparse.ArgumentParser:
     p = subs.add_parser("toggle", help="open or hide the Peppermint window")
     p.set_defaults(func=cmd_toggle)
 
+    p = subs.add_parser("recover", help="open the independent fullscreen recovery controls")
+    p.set_defaults(func=cmd_recover)
+
     return parser
 
 
@@ -272,8 +305,8 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
 
     # `peppermint "an idea"` is the same as `peppermint add "an idea"`.
-    known = {"add", "list", "show", "allow", "deny", "answer", "chat",
-             "cancel", "watch", "health", "undo", "toggle", "-h", "--help"}
+    known = {"add", "list", "show", "allow", "deny", "answer", "retest", "chat",
+             "cancel", "watch", "health", "undo", "toggle", "recover", "-h", "--help"}
     if argv and argv[0] not in known:
         argv.insert(0, "add")
 

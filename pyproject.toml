@@ -28,9 +28,13 @@ dev = ["pytest>=8"]
 peppermint = "peppermint.cli:main"
 peppermint-daemon = "peppermint.daemon.main:main"
 peppermint-window = "peppermint.ui.app:main"
+peppermint-recovery = "peppermint.recovery.app:main"
 
 [tool.setuptools.packages.find]
 include = ["peppermint*"]
+
+[tool.setuptools.package-data]
+"peppermint.ui" = ["*.css", "assets/*.svg", "assets/textures/*.png"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

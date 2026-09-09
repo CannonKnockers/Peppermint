@@ -32,24 +32,31 @@ def notify_user(title: str, body: str, ctx: Context = None):
 @tool(
     name="ask_user",
     description=(
-        "Present a question or selectable choices and wait. When the user asks for options "
-        "before acting, call this tool with two or three options so the window shows buttons. "
-        "Do not write a choice question in ordinary text. Also use when needed information is missing."
+        "Ask the user for information or a decision needed to continue, then wait for their answer. "
+        "Use this for an unclear cleanup/removal scope, including when the user asks you to decide. "
+        "Also call it before troubleshooting when the application/game, operating system, "
+        "launcher, remote target or failure symptom is unspecified. "
+        "For missing details, ask one open question and omit options. "
+        "When the user requests choices, include exactly two or three options. "
+        "Use this tool for clarification questions; ordinary text is a completed answer."
     ),
     parameters={
         "type": "object",
         "properties": {"question": {"type": "string"},
                        "options": {"type": "array", "items": {"type": "string"},
-                                   "minItems": 2, "maxItems": 3}},
+                                   "minItems": 2, "maxItems": 3,
+                                   "description": "Optional. Omit for an open question; otherwise provide exactly two or three short choices."}},
         "required": ["question"],
     },
 )
 def ask_user(question: str, options: list[str] | None = None):
+    if not isinstance(question, str) or not question.strip() or len(question) > 2000:
+        raise ToolError("Provide a nonempty question of at most 2000 characters.")
     if options is not None:
         if (not isinstance(options, list) or not 2 <= len(options) <= 3
                 or any(not isinstance(o, str) or not o.strip() for o in options)):
             raise ToolError("Provide two or three nonempty text options.")
-    return Ask(question=question)
+    return Ask(question=question.strip())
 
 
 @tool(

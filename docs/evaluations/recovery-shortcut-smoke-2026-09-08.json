@@ -1,0 +1,10 @@
+{
+  "activation_seconds": 0.455,
+  "recovery_pid": 361277,
+  "fullscreen": true,
+  "fixture_still_frozen": true,
+  "repeated_shortcut_same_window": true,
+  "escape_returned_desktop": true,
+  "fixture_cleaned_up": true,
+  "session_actions_executed": false
+}

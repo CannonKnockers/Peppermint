@@ -1,0 +1,42 @@
+.peppermint-menu {
+  background-color: #242f29;
+  background-image: linear-gradient(rgba(29, 45, 35, 0.94), rgba(25, 35, 30, 0.96)), url("assets/textures/wood.png");
+  color: #eff7f0;
+  border: none;
+  border-right: 1px solid #779985;
+  border-radius: 0;
+  padding: 14px 12px;
+}
+.menu-shade { background-color: rgba(0, 0, 0, 0.30); }
+.peppermint-menu button.sidebar-close { padding: 6px; margin: 4px 0; }
+.peppermint-menu .menu-heading { font-size: 18px; font-weight: bold; padding: 8px 12px 12px; color: #c3ebcc; }
+.peppermint-menu button.menu-item {
+  background-color: transparent;
+  background-image: none;
+  border: 1px solid transparent;
+  box-shadow: none;
+  color: #eff7f0;
+  padding: 10px 12px;
+}
+.peppermint-menu button.menu-item:hover, .peppermint-menu button.menu-item:focus {
+  background-color: #344d3d;
+  border-color: #86ba9c;
+}
+.peppermint-menu button.menu-current {
+  background-color: #395642;
+  color: #d1f5d8;
+  font-weight: bold;
+  border-left: 3px solid #b9e5c3;
+  padding-left: 10px;
+}
+.peppermint-menu .menu-status { color: #adc2b4; font-size: 12px; padding: 12px 12px 4px; }
+.task-summary, .overview-card {
+  background-color: #202726;
+  background-image: linear-gradient(rgba(28, 36, 32, 0.90), rgba(22, 29, 26, 0.90)), url("assets/textures/earth.png");
+  border: 1px solid alpha(#93b6a5, 0.15);
+  border-radius: 0;
+  padding: 14px;
+}
+.task-summary { padding: 12px; }
+.summary-number { color: #b6e4c8; font-size: 26px; font-weight: 700; }
+.overview-card .task-link { padding: 6px 12px; }

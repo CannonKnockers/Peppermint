@@ -12,6 +12,8 @@ WINDOW_NAME = "org.peppermint.Window"
 WINDOW_PATH = "/org/peppermint/Window"
 WINDOW_IFACE = "org.peppermint.Window"
 
+RETEST_OUTCOMES = ("passed", "failed", "not_tested")
+
 DAEMON_XML = """
 <node>
   <interface name="org.peppermint.Daemon">
@@ -20,6 +22,13 @@ DAEMON_XML = """
       <arg type="i" name="id" direction="out"/>
     </method>
     <method name="ListTasks">
+      <arg type="i" name="limit" direction="in"/>
+      <arg type="s" name="json" direction="out"/>
+    </method>
+    <method name="TaskOverview">
+      <arg type="s" name="status_filter" direction="in"/>
+      <arg type="s" name="query" direction="in"/>
+      <arg type="i" name="offset" direction="in"/>
       <arg type="i" name="limit" direction="in"/>
       <arg type="s" name="json" direction="out"/>
     </method>
@@ -39,6 +48,11 @@ DAEMON_XML = """
     <method name="Answer">
       <arg type="i" name="id" direction="in"/>
       <arg type="s" name="text" direction="in"/>
+    </method>
+    <method name="Retest">
+      <arg type="i" name="id" direction="in"/>
+      <arg type="s" name="request_id" direction="in"/>
+      <arg type="s" name="outcome" direction="in"/>
     </method>
     <method name="Chat">
       <arg type="i" name="id" direction="in"/>

@@ -1,0 +1,33 @@
+.peppermint-window .diagnostics { color: #eff7f1; }
+.peppermint-window .diagnostic-heading { color: #f1fff6; font-size: 25px; font-weight: bold; }
+.peppermint-window .diagnostic-toolbar { border-bottom: 1px solid #566b60; padding-bottom: 12px; }
+.peppermint-window .diagnostics button { padding: 6px 11px; min-height: 20px; }
+.peppermint-window .diagnostics button:checked { background-color: #8cbda3; color: #ecfff2; border-color: #b0edc9; }
+.peppermint-window .diagnostic-card {
+    background-color: #252f2c;
+    background-image: linear-gradient(rgba(30, 43, 37, 0.92), rgba(24, 32, 29, 0.94)), url("assets/textures/metal.png");
+    background-size: auto, 360px 360px;
+    border: 1px solid #0a110d;
+    box-shadow: inset 0 1px #648170, inset 0 -1px #364d40;
+    padding: 14px;
+}
+.peppermint-window .diagnostic-value { font-size: 27px; color: #d9ffe5; font-weight: bold; }
+.peppermint-window .diagnostic-value-rates { font-size: 18px; }
+.peppermint-window .diagnostic-caption { color: #a9c3b3; font-size: 12px; }
+.peppermint-window .diagnostic-legend-first { color: #a8ebc4; font-size: 12px; }
+.peppermint-window .diagnostic-legend-second { color: #eac27e; font-size: 12px; }
+.peppermint-window .diagnostic-surface {
+    background-color: #222c27; border: 1px solid #0a110d;
+    box-shadow: inset 0 1px #536d5d; padding: 14px;
+}
+.peppermint-window .diagnostic-core { padding: 5px; background-color: #18271e; border: 1px solid #3f5e49; }
+.peppermint-window .diagnostic-core label { font-size: 11px; color: #c8ebd5; }
+.peppermint-window .diagnostics levelbar block { min-height: 4px; border: none; }
+.peppermint-window .diagnostics levelbar block.filled { background-color: #a0ddb7; }
+.peppermint-window .diagnostics levelbar block.empty { background-color: #33483a; }
+.peppermint-window .diagnostics treeview { background-color: #18221d; color: #e1efe5; font-size: 12px; }
+.peppermint-window .diagnostics treeview:selected { background-color: #3c6650; color: #f1fff5; }
+.peppermint-window .diagnostics treeview header button { padding: 7px; color: #c3ead2; font-size: 11px; }
+.peppermint-window .diagnostics treeview.view { -GtkTreeView-grid-line-width: 0; }
+.peppermint-window .diagnostics combobox button { padding: 5px 8px; }
+.peppermint-window .diagnostics .process-search { padding: 7px 10px; }

@@ -7,6 +7,8 @@ import gi
 gi.require_version("Gtk", "3.0")
 from gi.repository import GLib, Gtk, Pango  # noqa: E402
 
+from peppermint.common.retest import read_record
+
 STATUS_TEXT = {
     "queued": "waiting",
     "planning": "Planning",
@@ -29,7 +31,8 @@ STATUS_CLASS = {
     "cancelled": "pill-idle",
 }
 
-STEP_MARK = {"ok": "✓", "error": "!", "pending": "…", "denied": "✕", "asked": "?"}
+STEP_MARK = {"ok": "✓", "error": "!", "pending": "…", "denied": "✕", "asked": "?",
+             "user_reported": "•"}
 
 
 class TaskRow(Gtk.ListBoxRow):
@@ -46,6 +49,7 @@ class TaskRow(Gtk.ListBoxRow):
         self._steps: list[dict] = []
         self._messages: list[dict] = []
         self._plan: list[dict] = []
+        self._retest = None
         self._chat_draft = ""
         self._answer_draft = ""
         self._chat_entry = None
@@ -131,7 +135,9 @@ class TaskRow(Gtk.ListBoxRow):
             self._messages = task["messages"]
         if "plan" in task:
             self._plan = task.get("plan") or []
-        task = dict(task, messages=self._messages, plan=self._plan)
+        if "retest" in task:
+            self._retest = task.get("retest")
+        task = dict(task, messages=self._messages, plan=self._plan, retest=self._retest)
 
         self.idea.set_text(task["idea"].replace("\n", " "))
         self.idea.set_tooltip_text(task["idea"])
@@ -162,7 +168,7 @@ class TaskRow(Gtk.ListBoxRow):
 
         if self.expanded:
             key = repr(tuple(task.get(k) for k in (
-                "idea", "status", "messages", "steps", "plan", "pending", "question", "result", "error")))
+                "idea", "status", "messages", "steps", "plan", "pending", "question", "retest", "result", "error")))
             if key != self._detail_key:
                 self._build_detail(task)
                 self._detail_key = key
@@ -192,7 +198,7 @@ class TaskRow(Gtk.ListBoxRow):
             self.detail.pack_start(self._approval_bar(task["pending"]), False, False, 0)
 
         if task["status"] == "awaiting-input" and task.get("question"):
-            self.detail.pack_start(self._question_box(task["question"]), False, False, 0)
+            self.detail.pack_start(self._question_box(task["question"], task.get("retest")), False, False, 0)
 
         if task.get("result") and not any(
                 m.get("role") == "assistant" and m.get("content") == task["result"]
@@ -235,6 +241,17 @@ class TaskRow(Gtk.ListBoxRow):
             label = self._text_block(f"{mark}  {item.get('description', '')}",
                                      "step-ok" if status == "done" else "muted")
             box.pack_start(label, False, False, 0)
+            if status == "done":
+                # These fields are normalized by set_plan from the recorded
+                # tool, rather than supplied by the model as outcome claims.
+                scope = {"inspection": "Inspection completed",
+                         "action": "Action completed",
+                         "command": "Command completed",
+                         "user_reported": "User-reported pass"}.get(item.get("evidence_kind"))
+                evidence = (f"{scope} · {item['evidence_tool']} · step {item['evidence_step_id']}"
+                            if scope and item.get("evidence_tool") and item.get("evidence_step_id")
+                            else "Recorded completion · evidence scope unavailable")
+                box.pack_start(self._text_block(evidence, "muted"), False, False, 0)
         return box
 
     def _step_log(self, steps: list[dict]) -> Gtk.Widget:
@@ -284,6 +301,14 @@ class TaskRow(Gtk.ListBoxRow):
             return "install: " + (", ".join(packages) if isinstance(packages, list) else str(packages))
         if tool == "ask_user":
             return f"asked: {args.get('question', '')}"
+        if tool == "request_retest":
+            record = read_record(step.get('output', ''))
+            outcome = (record or {}).get('outcome')
+            if outcome:
+                label = {'passed': 'passed', 'failed': 'still failing', 'not_tested': 'not tested'}[outcome]
+                suffix = ' (superseded)' if step.get('status') == 'superseded' else ''
+                return f"User-reported retest: {label}{suffix}"
+            return f"Retest requested: {args.get('symptom', '')}"
         detail = ", ".join(f"{k}={v}" for k, v in list(args.items())[:2])
         return f"{tool.replace('_', ' ')}{': ' + detail if detail else ''}"
 
@@ -312,6 +337,7 @@ class TaskRow(Gtk.ListBoxRow):
         buttons = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         buttons.set_halign(Gtk.Align.END)
         deny = Gtk.Button(label="Deny")
+        deny.get_style_context().add_class("deny-button")
         deny.connect("clicked", lambda *_: respond(False))
         allow = Gtk.Button(label="Allow once")
         allow.get_style_context().add_class("suggested-action")
@@ -332,7 +358,7 @@ class TaskRow(Gtk.ListBoxRow):
         box.pack_start(buttons, False, False, 0)
         return frame
 
-    def _question_box(self, question: str) -> Gtk.Widget:
+    def _question_box(self, question: str, retest: dict | None = None) -> Gtk.Widget:
         frame = Gtk.Frame()
         frame.get_style_context().add_class("approval")
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
@@ -349,17 +375,46 @@ class TaskRow(Gtk.ListBoxRow):
         title.set_max_width_chars(76)
         box.pack_start(title, False, False, 0)
 
-        latest = next((s for s in reversed(self._steps) if s["tool"] == "ask_user"), {})
-        for option in latest.get("args", {}).get("options", []):
-            button = Gtk.Button(label=option)
-            button.get_child().set_line_wrap(True)
-            button.get_child().set_max_width_chars(70)
-            button.connect("clicked", lambda _button, value=option: self.client.answer(self.task_id, value))
-            box.pack_start(button, False, False, 0)
+        if retest:
+            box.pack_start(self._text_block(
+                "Choose the result of your test. This records your report; Peppermint "
+                "has not independently verified the outcome.", "retest-note"), False, False, 0)
+            choices = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+            submitted = False
+
+            def submit(outcome):
+                nonlocal submitted
+                if submitted:
+                    return
+                submitted = True
+                choices.set_sensitive(False)
+                try:
+                    self.client.retest(self.task_id, retest['request_id'], outcome)
+                except Exception:
+                    submitted = False
+                    choices.set_sensitive(True)
+                    raise
+
+            for outcome, label in (('passed', 'Passed'), ('failed', 'Still failing'),
+                                   ('not_tested', 'Not tested')):
+                button = Gtk.Button(label=label)
+                button.get_style_context().add_class("choice")
+                button.connect("clicked", lambda _button, value=outcome: submit(value))
+                choices.pack_start(button, False, False, 0)
+            box.pack_start(choices, False, False, 0)
+        else:
+            latest = next((s for s in reversed(self._steps) if s["tool"] == "ask_user"), {})
+            for option in latest.get("args", {}).get("options", []):
+                button = Gtk.Button(label=option)
+                button.get_style_context().add_class("choice")
+                button.get_child().set_line_wrap(True)
+                button.get_child().set_max_width_chars(70)
+                button.connect("clicked", lambda _button, value=option: self.client.answer(self.task_id, value))
+                box.pack_start(button, False, False, 0)
 
         entry = Gtk.Entry()
         self._answer_entry = entry
-        entry.set_placeholder_text("Your answer…")
+        entry.set_placeholder_text("Add details without recording a test result…" if retest else "Your answer…")
         entry.set_text(self._answer_draft)
         entry.connect("changed", lambda widget: setattr(self, "_answer_draft", widget.get_text()))
         entry.connect("activate", self._on_answer)

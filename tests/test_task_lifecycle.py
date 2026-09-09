@@ -78,7 +78,7 @@ def test_plan_done_requires_successful_same_task_evidence():
             call('set_plan',{'steps':[{'description':'Inspect','status':'done','evidence_step_id':evidence},
                                       {'description':'Verify','status':'pending'}]}, Context(task,db,require_approval=True))
     good=db.add_step(task,'performance_snapshot',{},'risky','{}','ok')
-    result=call('set_plan',{'steps':[{'description':'Inspect','status':'done','evidence_step_id':good},
+    result=call('set_plan',{'steps':[{'description':'Inspect','kind':'inspection','status':'done','evidence_step_id':good},
                                    {'description':'Verify','status':'pending'}]}, Context(task,db,require_approval=True))
     assert isinstance(result,str)
     assert db.get_task(task).plan[0]['status']=='done'
