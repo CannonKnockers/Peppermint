@@ -171,3 +171,11 @@ def test_overview_bus_signature_and_dispatch_are_read_only(db):
     assert view["limit"] == 10
     with pytest.raises(ValueError, match="filter"):
         daemon._dispatch("TaskOverview", ("unknown", "", 0, 10))
+
+
+def test_fork_task_signature_is_in_bus_xml():
+    method = Gio.DBusNodeInfo.new_for_xml(dbus_api.DAEMON_XML).interfaces[0].lookup_method("ForkTask")
+    assert [(a.name, a.signature) for a in method.in_args] == [
+        ("from_task_id", "i"), ("from_step_index", "i"), ("new_idea", "s"),
+    ]
+    assert [a.signature for a in method.out_args] == ["i"]

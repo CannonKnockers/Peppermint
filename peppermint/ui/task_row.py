@@ -74,6 +74,12 @@ class TaskRow(Gtk.ListBoxRow):
         self.arrow.get_style_context().add_class("dim-label")
         header.pack_start(self.arrow, False, False, 0)
 
+        self.branch = Gtk.Label(label="⎇")
+        self.branch.get_style_context().add_class("branch-icon")
+        self.branch.set_tooltip_text("Forked from another task")
+        self.branch.set_no_show_all(True)
+        header.pack_start(self.branch, False, False, 0)
+
         self.idea = Gtk.Label(xalign=0)
         self.idea.set_ellipsize(Pango.EllipsizeMode.END)
         self.idea.set_line_wrap(False)
@@ -141,6 +147,7 @@ class TaskRow(Gtk.ListBoxRow):
 
         self.idea.set_text(task["idea"].replace("\n", " "))
         self.idea.set_tooltip_text(task["idea"])
+        self.branch.set_visible(bool(int(task.get("parent_task_id", 0) or 0)))
 
         status = task["status"]
         if status != self._status:

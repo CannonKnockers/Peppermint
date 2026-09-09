@@ -36,6 +36,12 @@ DAEMON_XML = """
       <arg type="i" name="id" direction="in"/>
       <arg type="s" name="json" direction="out"/>
     </method>
+    <method name="ForkTask">
+      <arg type="i" name="from_task_id" direction="in"/>
+      <arg type="i" name="from_step_index" direction="in"/>
+      <arg type="s" name="new_idea" direction="in"/>
+      <arg type="i" name="id" direction="out"/>
+    </method>
     <method name="ExportTask">
       <arg type="i" name="task_id" direction="in"/>
       <arg type="s" name="archive_path" direction="out"/>

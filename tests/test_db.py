@@ -196,3 +196,63 @@ def test_list_tasks_shows_the_newest_first(db):
     db.add_task("old")
     newest = db.add_task("new")
     assert db.list_tasks()[0].id == newest
+
+
+def test_fork_task_reuses_prefix_history_and_diverges_ids(db):
+    root = db.add_task("Root idea")
+    first = db.add_step(root, "list_dir", {"path": "~"}, "safe", "", "ok")
+    second = db.add_step(root, "read_file", {"path": "/etc/hosts"}, "safe", "ok", "ok")
+    third = db.add_step(root, "run_shell", {"cmd": "echo done"}, "safe", "done", "ok")
+    db.add_message(root, "user", "Inspect this directory")
+    db.add_message(root, "assistant", "Plan to read hosts then run a test.")
+    db.add_confirmation(root, first, "Allowed read_file", reason="context")
+    db.add_confirmation(root, third, "Allowed run_shell", reason="later step")
+    db.record_undo(root, "file", "/etc/hosts", "old")
+    db.set_plan(root, [
+        {"description": "Read /etc/hosts", "status": "done", "evidence_step_id": second},
+        {"description": "Cleanup", "status": "pending"},
+    ])
+    db.set_status(root, Status.AWAITING_CONFIRMATION)  # Keep one old state to make divergence visible.
+    db.connection().execute("INSERT INTO task_runs (task_id, calls_used, step_start) VALUES (?, ?, ?)",
+                            (root, 2, third))
+
+    forked = db.fork_task(root, 1, "Forked idea")
+
+    forked_task = db.get_task(forked)
+    root_task = db.get_task(root)
+    assert forked_task.parent_task_id == root
+    assert forked_task.idea == "Forked idea"
+    assert forked_task.status == Status.QUEUED.value
+    assert forked_task.result == ""
+    assert forked_task.error == ""
+    assert forked_task.steps[0].tool == "list_dir"
+    assert forked_task.steps[1].tool == "read_file"
+    assert [s.id for s in forked_task.steps] != [first, second]
+    assert forked_task.steps[1].id > forked_task.steps[0].id
+    assert len(forked_task.steps) == 2
+    assert len(forked_task.messages) == 2
+    assert len(forked_task.plan) == 2
+
+    copied_confirmations = db.connection().execute(
+        "SELECT description, step_id FROM confirmations WHERE task_id = ? ORDER BY id ASC",
+        (forked,),
+    ).fetchall()
+    assert [row["description"] for row in copied_confirmations] == ["Allowed read_file"]
+    assert [row["step_id"] for row in copied_confirmations] == [forked_task.steps[0].id]
+
+    run = db.connection().execute("SELECT calls_used, step_start FROM task_runs WHERE task_id = ?", (forked,)).fetchone()
+    assert run["calls_used"] == 0
+    assert run["step_start"] == forked_task.steps[-1].id
+
+    db.add_step(forked, "run_shell", {"cmd": "echo forked"}, "safe", "", "queued")
+    assert db.get_task(root).steps == root_task.steps
+
+
+def test_fork_task_rejects_cycles_in_task_graph(db):
+    root = db.add_task("root")
+    fork = db.add_task("fork")
+    db.connection().execute("UPDATE tasks SET parent_task_id = ? WHERE id = ?", (root, fork))
+    db.connection().execute("UPDATE tasks SET parent_task_id = ? WHERE id = ?", (fork, root))
+
+    with pytest.raises(ValueError, match="directed acyclic"):
+        db.fork_task(root, 0, "would cycle")

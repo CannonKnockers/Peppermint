@@ -80,6 +80,7 @@ class Task:
     id: int
     idea: str
     status: str
+    parent_task_id: int
     created_at: str
     updated_at: str
     result: str = ""

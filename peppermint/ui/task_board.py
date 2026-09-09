@@ -181,6 +181,11 @@ class TaskBoard(Gtk.Box):
         title.set_tooltip_text(task.get("idea"))
         title.get_style_context().add_class("task-title")
         heading.pack_start(title, True, True, 0)
+        if int(task.get("parent_task_id", 0) or 0):
+            branch = Gtk.Label(label="⎇")
+            branch.get_style_context().add_class("branch-icon")
+            branch.set_tooltip_text("Forked from another task")
+            heading.pack_start(branch, False, False, 0)
         status = task.get("status", "unknown")
         pill = Gtk.Label(label=STATUS_LABELS.get(status, status))
         pill.get_style_context().add_class("pill")

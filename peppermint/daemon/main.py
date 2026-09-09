@@ -189,6 +189,12 @@ class Daemon:
             self._emit_update(task_id, Status.QUEUED)
             return GLib.Variant("(i)", (task_id,))
 
+        if method == "ForkTask":
+            new_id = self.db.fork_task(args[0], args[1], args[2])
+            self.jobs.put(Job("run", new_id))
+            self._emit_update(new_id, Status.QUEUED)
+            return GLib.Variant("(i)", (new_id,))
+
         if method == "ListTasks":
             limit = args[0] or 50
             tasks = [t.to_dict() for t in self.db.list_tasks(limit)]

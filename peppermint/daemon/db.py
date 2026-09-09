@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     idea        TEXT    NOT NULL,
     status      TEXT    NOT NULL,
+    parent_task_id INTEGER NOT NULL DEFAULT 0,
     created_at  TEXT    NOT NULL,
     updated_at  TEXT    NOT NULL,
     result      TEXT    NOT NULL DEFAULT '',
@@ -90,7 +91,7 @@ CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
 """
 
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 # Each migration takes a connection and moves the database up by one version.
 # A migration must be safe to run on a database that real work already used.
@@ -110,6 +111,9 @@ MIGRATIONS: dict[int, list[str]] = {
         # A change can be put back, and only once.
         "ALTER TABLE undo ADD COLUMN undone INTEGER NOT NULL DEFAULT 0",
         "ALTER TABLE undo ADD COLUMN step_id INTEGER NOT NULL DEFAULT 0",
+    ],
+    4: [
+        "ALTER TABLE tasks ADD COLUMN parent_task_id INTEGER NOT NULL DEFAULT 0",
     ],
 }
 
@@ -136,6 +140,7 @@ _ARCHIVE_FIELDS = {
     "tasks": {
         "idea": str, "status": str, "created_at": str, "updated_at": str,
         "result": (str, ""), "error": (str, ""), "question": (str, ""),
+        "parent_task_id": (int, 0),
         "policy_version": (int, 0),
     },
     "steps": {
@@ -297,10 +302,19 @@ class Database:
         version = self.current_version()
 
         if version == 0:
-            # A database made before this table existed may already hold the
-            # newest columns, because the CREATE statements above are current.
-            columns = {r["name"] for r in conn.execute("PRAGMA table_info(confirmations)")}
-            version = SCHEMA_VERSION if "token" in columns else 1
+            # A database made before this table existed may already hold newer
+            # columns, because the CREATE statements above are current.
+            confirm_columns = {r["name"] for r in conn.execute("PRAGMA table_info(confirmations)")}
+            task_columns = {r["name"] for r in conn.execute("PRAGMA table_info(tasks)")}
+            undo_columns = {r["name"] for r in conn.execute("PRAGMA table_info(undo)")}
+            if "parent_task_id" in task_columns:
+                version = 4
+            elif "step_id" in undo_columns and "undone" in undo_columns:
+                version = 3
+            elif "token" in confirm_columns:
+                version = 2
+            else:
+                version = 1
             with conn:
                 conn.execute("DELETE FROM schema_version")
                 conn.execute("INSERT INTO schema_version (version) VALUES (?)", (version,))
@@ -452,6 +466,7 @@ class Database:
             "id": int(row["id"]),
             "idea": row["idea"],
             "status": row["status"],
+            "parent_task_id": int(row["parent_task_id"]),
             "created_at": row["created_at"],
             "updated_at": row["updated_at"],
             "result": row["result"],
@@ -483,11 +498,12 @@ class Database:
     @staticmethod
     def _insert_portable_task(conn: sqlite3.Connection, task: dict) -> int:
         cur = conn.execute(
-            "INSERT INTO tasks (idea, status, created_at, updated_at, result, error, question, policy_version) "
-            "VALUES (?,?,?,?,?,?,?,?)",
+            "INSERT INTO tasks (idea, status, parent_task_id, created_at, updated_at, result, error, question, policy_version) "
+            "VALUES (?,?,?,?,?,?,?,?,?)",
             (
                 task["idea"],
                 task["status"],
+                int(task["parent_task_id"]),
                 task["created_at"],
                 task["updated_at"],
                 task["result"],
@@ -706,12 +722,175 @@ class Database:
             id=int(row["id"]),
             idea=row["idea"],
             status=row["status"],
+            parent_task_id=int(row["parent_task_id"]),
             created_at=row["created_at"],
             updated_at=row["updated_at"],
             result=row["result"],
             error=row["error"],
             question=row["question"],
         )
+
+    def _ensure_task_graph_is_acyclic(self) -> None:
+        conn = self.connection()
+        rows = conn.execute("SELECT id, parent_task_id FROM tasks").fetchall()
+        parent = {int(row["id"]): int(row["parent_task_id"]) for row in rows}
+        for start_id in parent:
+            seen = set()
+            current = start_id
+            while current:
+                if current in seen:
+                    raise ValueError("Task ancestry must be a directed acyclic graph.")
+                seen.add(current)
+                current = parent.get(current, 0)
+
+    def fork_task(self, from_task_id: int, from_step_index: int, new_idea: str) -> int:
+        if type(from_task_id) is not int or not 1 <= from_task_id <= 2_147_483_647:
+            raise ValueError("Task ID must be between 1 and 2147483647.")
+        if type(from_step_index) is not int or from_step_index < 0:
+            raise ValueError("from_step_index must be an integer >= 0.")
+
+        new_idea = (new_idea or "").strip()
+        if not new_idea:
+            raise ValueError("The fork idea must be a non-empty string.")
+
+        conn = self.connection()
+        source = conn.execute("SELECT * FROM tasks WHERE id = ?", (from_task_id,)).fetchone()
+        if source is None:
+            raise ValueError(f"Cannot fork unknown task {from_task_id}.")
+
+        source_steps = conn.execute(
+            "SELECT * FROM steps WHERE task_id = ? ORDER BY id ASC",
+            (from_task_id,),
+        ).fetchall()
+        if not source_steps:
+            raise ValueError("Source task has no steps to fork.")
+        if from_step_index >= len(source_steps):
+            raise ValueError("Fork index must be within the source task's step range.")
+
+        self._ensure_task_graph_is_acyclic()
+
+        with conn:
+            new_task = conn.execute(
+                "INSERT INTO tasks (idea, status, parent_task_id, created_at, updated_at, result, error, question, policy_version)"
+                " VALUES (?,?,?,?,?,?,?,?,?)",
+                (
+                    new_idea,
+                    Status.QUEUED.value,
+                    from_task_id,
+                    now(),
+                    now(),
+                    "",
+                    "",
+                    "",
+                    int(source["policy_version"]),
+                ),
+            )
+            new_task_id = int(new_task.lastrowid)
+
+            step_id_map: dict[int, int] = {}
+            for step in source_steps[:from_step_index + 1]:
+                try:
+                    args = json.loads(step["args"])
+                except (TypeError, ValueError):
+                    args = {}
+                cur = conn.execute(
+                    "INSERT INTO steps (task_id, tool, args, risk, output, status, ts, started_at, mutating)"
+                    " VALUES (?,?,?,?,?,?,?,?,?)",
+                    (
+                        new_task_id,
+                        step["tool"],
+                        json.dumps(args, allow_nan=False),
+                        step["risk"],
+                        step["output"],
+                        step["status"],
+                        step["ts"],
+                        step["started_at"],
+                        int(step["mutating"]),
+                    ),
+                )
+                step_id_map[int(step["id"])] = int(cur.lastrowid)
+
+            for message in conn.execute(
+                "SELECT role, content, ts FROM messages WHERE task_id = ? ORDER BY id ASC",
+                (from_task_id,),
+            ).fetchall():
+                content = _remap_retest_message(message["content"], step_id_map)
+                conn.execute(
+                    "INSERT INTO messages (task_id, role, content, ts) VALUES (?,?,?,?)",
+                    (new_task_id, message["role"], content, message["ts"]),
+                )
+
+            copied_steps = set(step_id_map)
+            for confirmation in conn.execute(
+                "SELECT * FROM confirmations WHERE task_id = ? ORDER BY id ASC",
+                (from_task_id,),
+            ).fetchall():
+                confirmation_step = int(confirmation["step_id"])
+                if confirmation_step and confirmation_step not in copied_steps:
+                    continue
+                conn.execute(
+                    "INSERT INTO confirmations (task_id, step_id, description, reason, resolved, approved, "
+                    "ts, token, expires_at, fingerprint) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                    (
+                        new_task_id,
+                        step_id_map.get(confirmation_step, confirmation_step),
+                        confirmation["description"],
+                        confirmation["reason"],
+                        int(confirmation["resolved"]),
+                        int(confirmation["approved"]),
+                        confirmation["ts"],
+                        confirmation["token"],
+                        confirmation["expires_at"],
+                        confirmation["fingerprint"],
+                    ),
+                )
+
+            for record in conn.execute(
+                "SELECT * FROM undo WHERE task_id = ? ORDER BY id ASC",
+                (from_task_id,),
+            ).fetchall():
+                undo_step = int(record["step_id"])
+                if undo_step and undo_step not in copied_steps:
+                    continue
+                conn.execute(
+                    "INSERT INTO undo (task_id, kind, target, old_value, ts, undone, step_id) "
+                    "VALUES (?,?,?,?,?,?,?)",
+                    (
+                        new_task_id,
+                        record["kind"],
+                        record["target"],
+                        record["old_value"],
+                        record["ts"],
+                        int(record["undone"]),
+                        step_id_map.get(undo_step, undo_step),
+                    ),
+                )
+
+            source_run = conn.execute("SELECT calls_used, step_start FROM task_runs WHERE task_id = ?",
+                                      (from_task_id,)).fetchone()
+            if source_run is not None:
+                last_step = max(step_id_map.values()) if step_id_map else 0
+                mapped_start = step_id_map.get(int(source_run["step_start"]), 0)
+                mapped_start = mapped_start or last_step
+                conn.execute(
+                    "INSERT INTO task_runs (task_id, calls_used, step_start) VALUES (?, ?, ?)",
+                    (new_task_id, 0, mapped_start),
+                )
+
+            source_plan = conn.execute("SELECT steps FROM task_plans WHERE task_id = ?", (from_task_id,)).fetchone()
+            if source_plan is not None:
+                try:
+                    plan = json.loads(source_plan["steps"])
+                except (TypeError, ValueError):
+                    plan = []
+                if not isinstance(plan, list):
+                    raise ValueError("Stored plan data must be an array.")
+                conn.execute(
+                    "INSERT INTO task_plans (task_id, steps) VALUES (?, ?)",
+                    (new_task_id, json.dumps([_remap_history_ids(row, step_id_map) for row in plan])),
+                )
+
+            return new_task_id
 
     def ensure_run(self, task_id: int, reset: bool = False) -> None:
         with self.connection() as conn:

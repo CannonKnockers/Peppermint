@@ -166,6 +166,17 @@ def cmd_export(args) -> int:
     return 0
 
 
+def cmd_fork(args) -> int:
+    result = dbus_api.call_daemon(
+        "ForkTask",
+        GLib.Variant("(iis)", (args.task_id, args.at_step, " ".join(args.idea))),
+        GLib.VariantType("(i)"),
+    )
+    task_id = result.unpack()[0]
+    print(f"Forked task {args.task_id} into {task_id}.")
+    return 0
+
+
 def cmd_import(args) -> int:
     """Resolve the caller's path before sending it to the background daemon."""
     try:
@@ -348,6 +359,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("file", help="path to the .peppermint archive")
     p.set_defaults(func=cmd_import)
 
+    p = subs.add_parser("fork", help="fork a task from one historical step")
+    p.add_argument("task_id", type=_positive_task_id, help="existing task ID")
+    p.add_argument("--at", type=int, required=True, help="0-based step index to copy through")
+    p.add_argument("idea", nargs="+")
+    p.set_defaults(func=cmd_fork)
+
     p = subs.add_parser("undo", help="list or put back the changes Peppermint made")
     p.add_argument("-n", "--limit", type=int, default=20)
     p.add_argument("--apply", action="store_true", help="put the change back")
@@ -370,7 +387,8 @@ def main(argv: list[str] | None = None) -> int:
 
     # `peppermint "an idea"` is the same as `peppermint add "an idea"`.
     known = {"add", "list", "show", "allow", "deny", "answer", "retest", "chat",
-             "cancel", "watch", "health", "export", "import", "undo", "toggle", "recover", "-h", "--help"}
+             "cancel", "watch", "health", "export", "import", "fork", "undo",
+             "toggle", "recover", "-h", "--help"}
     if argv and argv[0] not in known:
         argv.insert(0, "add")
 

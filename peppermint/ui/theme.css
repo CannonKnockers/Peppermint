@@ -193,6 +193,12 @@
 .peppermint-window .pill-wait { background: #e5d3a2; color: #3d3216; }
 .peppermint-window .pill-ok { background: #b4dbc2; color: #163526; }
 .peppermint-window .pill-bad { background: #e0b2a6; color: #471f19; }
+.peppermint-window .branch-icon {
+    color: #9bd1ff;
+    font-size: 14px;
+    font-weight: bold;
+    margin-right: 2px;
+}
 .peppermint-window .step-text, .peppermint-window .mono { font-family: monospace; font-size: 12px; color: #d1dfd7; }
 .peppermint-window .step-ok { color: #bef0d2; }
 .peppermint-window .step-error, .peppermint-window .step-denied,
